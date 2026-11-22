@@ -17,6 +17,7 @@ export class PauseOverlay {
         <ul>
           <li><b>鼠标</b> 环顾 &nbsp;·&nbsp; <b>W A S D</b> 移动</li>
           <li><b>Space</b> 跳跃 &nbsp;·&nbsp; <b>Ctrl</b> 冲刺 &nbsp;·&nbsp; <b>F</b> 切换飞行（Space/Shift 升降）</li>
+          <li><b>左键</b> 挖掘 &nbsp;·&nbsp; <b>右键</b> 放置（触屏：轻点挖 / 长按放）</li>
           <li><b>F3</b> 调试面板 &nbsp;·&nbsp; <b>ESC</b> 释放鼠标</li>
         </ul>
         <p class="pause-status"></p>

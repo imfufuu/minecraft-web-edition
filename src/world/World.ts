@@ -1,6 +1,6 @@
 import { BlockId } from '../blocks/BlockTypes';
 import { worldToChunkCoords } from '../utils/math';
-import { Chunk, CHUNK_HEIGHT } from './Chunk';
+import { Chunk, CHUNK_HEIGHT, CHUNK_SIZE } from './Chunk';
 import type { TerrainGenerator } from './TerrainGenerator';
 
 /**
@@ -44,13 +44,27 @@ export class World {
     return chunk.getBlock(lx, ly, lz);
   }
 
-  /** Sets a block at absolute world coordinates. Returns false if the chunk is not loaded or unchanged. */
+  /**
+   * Sets a block at absolute world coordinates. Returns false if the chunk is not loaded or unchanged.
+   * Border edits also flag the adjacent chunk(s) dirty, because their boundary faces depend on this block.
+   */
   setBlock(wx: number, wy: number, wz: number, id: number): boolean {
     if (wy < 0 || wy >= CHUNK_HEIGHT) return false;
     const { cx, cz, lx, ly, lz } = worldToChunkCoords(wx, wy, wz);
     const chunk = this.chunks.get(Chunk.keyOf(cx, cz));
     if (!chunk) return false;
-    return chunk.setBlock(lx, ly, lz, id);
+    if (!chunk.setBlock(lx, ly, lz, id)) return false;
+
+    if (lx === 0) this.markDirty(cx - 1, cz);
+    else if (lx === CHUNK_SIZE - 1) this.markDirty(cx + 1, cz);
+    if (lz === 0) this.markDirty(cx, cz - 1);
+    else if (lz === CHUNK_SIZE - 1) this.markDirty(cx, cz + 1);
+    return true;
+  }
+
+  private markDirty(cx: number, cz: number): void {
+    const c = this.chunks.get(Chunk.keyOf(cx, cz));
+    if (c) c.dirty = true;
   }
 
   /** Generate every chunk in the inclusive square [minC, maxC]². */

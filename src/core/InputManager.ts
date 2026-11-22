@@ -15,6 +15,7 @@ const LOCK_TIMEOUT_MS = 400;
 
 export class InputManager {
   private readonly keys = new Set<string>();
+  private readonly mouseButtons = new Set<number>();
   private mouseDX = 0;
   private mouseDY = 0;
   private wheelDelta = 0;
@@ -42,6 +43,7 @@ export class InputManager {
   private readonly onBlur = (): void => {
     // Avoid "stuck keys" when the window loses focus (alt-tab, tab switch).
     this.keys.clear();
+    this.mouseButtons.clear();
   };
 
   private readonly onMouseMove = (e: MouseEvent): void => {
@@ -58,6 +60,12 @@ export class InputManager {
   private dragPointerId: number | null = null;
   private dragLastX = 0;
   private dragLastY = 0;
+  private dragStartX = 0;
+  private dragStartY = 0;
+  private dragStartTime = 0;
+  private dragButton = 0;
+  private dragMoved = false;
+  private longPressTimer = 0;
 
   private readonly onPointerDown = (e: PointerEvent): void => {
     if (this.mode !== 'fallback') return;
@@ -65,6 +73,21 @@ export class InputManager {
     this.dragPointerId = e.pointerId;
     this.dragLastX = e.clientX;
     this.dragLastY = e.clientY;
+    this.dragStartX = e.clientX;
+    this.dragStartY = e.clientY;
+    this.dragStartTime = performance.now();
+    this.dragButton = e.button;
+    this.dragMoved = false;
+    // Touch long-press (no movement) acts as a right click (place).
+    if (e.pointerType === 'touch') {
+      this.longPressTimer = window.setTimeout(() => {
+        this.longPressTimer = 0;
+        if (this.dragPointerId === e.pointerId && !this.dragMoved) {
+          this.dragMoved = true; // consume: no tap on release
+          for (const fn of this.clickListeners) fn(2);
+        }
+      }, 500);
+    }
     try {
       this.element.setPointerCapture(e.pointerId);
     } catch {
@@ -78,11 +101,20 @@ export class InputManager {
     this.mouseDY += e.clientY - this.dragLastY;
     this.dragLastX = e.clientX;
     this.dragLastY = e.clientY;
+    if (Math.abs(e.clientX - this.dragStartX) > 4 || Math.abs(e.clientY - this.dragStartY) > 4) this.dragMoved = true;
   };
 
   private readonly onPointerUp = (e: PointerEvent): void => {
     if (e.pointerId !== this.dragPointerId) return;
     this.dragPointerId = null;
+    if (this.longPressTimer !== 0) {
+      window.clearTimeout(this.longPressTimer);
+      this.longPressTimer = 0;
+    }
+    // Short tap without movement = click (left: dig, right: place).
+    if (!this.dragMoved && performance.now() - this.dragStartTime < 300 && e.type === 'pointerup') {
+      for (const fn of this.clickListeners) fn(this.dragButton);
+    }
     try {
       this.element.releasePointerCapture(e.pointerId);
     } catch {
@@ -96,7 +128,16 @@ export class InputManager {
       return;
     }
     e.preventDefault();
-    for (const fn of this.clickListeners) fn(e.button);
+    // In fallback mode the left button is also the drag-to-look button, so clicks
+    // are detected as short taps on pointerup instead (see onPointerUp).
+    if (this.mode === 'locked') {
+      this.mouseButtons.add(e.button);
+      for (const fn of this.clickListeners) fn(e.button);
+    }
+  };
+
+  private readonly onMouseUp = (e: MouseEvent): void => {
+    this.mouseButtons.delete(e.button);
   };
 
   private readonly onWheel = (e: WheelEvent): void => {
@@ -130,6 +171,7 @@ export class InputManager {
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('mousemove', this.onMouseMove);
     element.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('mouseup', this.onMouseUp);
     element.addEventListener('pointerdown', this.onPointerDown);
     element.addEventListener('pointermove', this.onPointerMove);
     element.addEventListener('pointerup', this.onPointerUp);
@@ -215,6 +257,11 @@ export class InputManager {
     return this.keys.has(code);
   }
 
+  /** Mouse button currently held (0 left, 1 middle, 2 right). Only tracked in locked mode. */
+  isMouseDown(button: number): boolean {
+    return this.mouseButtons.has(button);
+  }
+
   /** Returns accumulated mouse delta since last call and resets it. */
   consumeMouseDelta(): { dx: number; dy: number } {
     const d = { dx: this.mouseDX, dy: this.mouseDY };
@@ -252,6 +299,7 @@ export class InputManager {
     if (this.mode === mode) return;
     this.mode = mode;
     this.keys.clear();
+    this.mouseButtons.clear();
     this.mouseDX = 0;
     this.mouseDY = 0;
     this.dragPointerId = null;
@@ -272,6 +320,7 @@ export class InputManager {
     window.removeEventListener('blur', this.onBlur);
     document.removeEventListener('mousemove', this.onMouseMove);
     this.element.removeEventListener('mousedown', this.onMouseDown);
+    window.removeEventListener('mouseup', this.onMouseUp);
     this.element.removeEventListener('pointerdown', this.onPointerDown);
     this.element.removeEventListener('pointermove', this.onPointerMove);
     this.element.removeEventListener('pointerup', this.onPointerUp);
