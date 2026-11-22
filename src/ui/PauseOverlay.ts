@@ -1,9 +1,10 @@
 /**
- * Full-screen hint shown whenever the pointer is not locked.
+ * Full-screen menu shown whenever the game is not capturing input.
  * Clicking anywhere requests pointer lock via the supplied callback.
  */
 export class PauseOverlay {
   private readonly el: HTMLDivElement;
+  private readonly status: HTMLParagraphElement;
 
   constructor(onClick: () => void, parent: HTMLElement = document.body) {
     this.el = document.createElement('div');
@@ -17,13 +18,24 @@ export class PauseOverlay {
           <li><b>Space</b> 上升 &nbsp;·&nbsp; <b>Shift</b> 下降 &nbsp;·&nbsp; <b>Ctrl</b> 冲刺</li>
           <li><b>F3</b> 调试面板 &nbsp;·&nbsp; <b>ESC</b> 释放鼠标</li>
         </ul>
+        <p class="pause-status"></p>
       </div>`;
-    this.el.addEventListener('click', onClick);
+    this.status = this.el.querySelector<HTMLParagraphElement>('.pause-status') as HTMLParagraphElement;
+    this.el.addEventListener('click', (e) => {
+      e.preventDefault();
+      onClick();
+    });
     parent.appendChild(this.el);
   }
 
   setVisible(visible: boolean): void {
     this.el.classList.toggle('hidden', !visible);
+  }
+
+  /** Small status line under the controls (e.g. pointer-lock fallback notice). */
+  setStatus(text: string): void {
+    this.status.textContent = text;
+    this.status.classList.toggle('hidden', text.length === 0);
   }
 
   dispose(): void {

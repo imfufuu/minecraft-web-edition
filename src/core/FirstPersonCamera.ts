@@ -84,7 +84,7 @@ export class FirstPersonCamera {
   }
 
   private updateMove(dt: number): void {
-    if (!this.input.locked) return;
+    if (!this.input.active) return;
     const input = this.input;
 
     // Horizontal basis derived from yaw only, so looking up/down never changes walk speed.

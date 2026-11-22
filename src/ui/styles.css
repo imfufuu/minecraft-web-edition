@@ -85,3 +85,32 @@ body {
   line-height: 1.8;
   color: #ccc;
 }
+
+.pause-status {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: #ffb74d;
+  max-width: 420px;
+}
+
+.pause-status.hidden {
+  display: none;
+}
+
+.mode-badge {
+  position: fixed;
+  right: 10px;
+  top: 8px;
+  z-index: 100;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #ffe082;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 3px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.mode-badge.hidden {
+  display: none;
+}

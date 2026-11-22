@@ -57,9 +57,19 @@ function bootstrap(): void {
 
   // --- UI ---
   const pause = new PauseOverlay(() => input.requestLock());
-  input.onLockChanged((locked) => pause.setVisible(!locked));
+  const modeBadge = document.createElement('div');
+  modeBadge.className = 'mode-badge hidden';
+  modeBadge.textContent = '拖拽环顾模式 · ESC 返回菜单 / Drag to look · ESC for menu';
+  document.body.appendChild(modeBadge);
+  input.onModeChanged((mode) => {
+    pause.setVisible(mode === 'none');
+    modeBadge.classList.toggle('hidden', mode !== 'fallback');
+    if (mode === 'fallback') {
+      pause.setStatus('当前环境不允许锁定鼠标（如嵌入式预览 iframe），已切换为"按住鼠标拖拽环顾"模式。');
+    }
+  });
   const debug = new DebugOverlay();
-  debug.addLine(() => `Yaw: ${THREE.MathUtils.radToDeg(fps.yaw).toFixed(1)}°  Pitch: ${THREE.MathUtils.radToDeg(fps.pitch).toFixed(1)}°`);
+  debug.addLine(() => `Yaw: ${THREE.MathUtils.radToDeg(fps.yaw).toFixed(1)}°  Pitch: ${THREE.MathUtils.radToDeg(fps.pitch).toFixed(1)}°  Input: ${input.captureMode}`);
   debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Meshes: ${meshes.meshes.size}  Faces: ${meshes.totalFaces}`);
   debug.addLine(() => `Gen: ${genMs.toFixed(1)} ms  Mesh: ${meshMs.toFixed(1)} ms`);
   debug.addLine(() => {
