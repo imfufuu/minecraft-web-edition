@@ -1,0 +1,41 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#app canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.debug-overlay {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #e8e8e8;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre;
+  pointer-events: none;
+  user-select: none;
+  border-radius: 3px;
+}
+
+.debug-overlay.hidden {
+  display: none;
+}
