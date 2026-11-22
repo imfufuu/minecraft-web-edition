@@ -39,3 +39,49 @@ body {
 .debug-overlay.hidden {
   display: none;
 }
+
+.pause-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pause-overlay.hidden {
+  display: none;
+}
+
+.pause-card {
+  text-align: center;
+  padding: 28px 40px;
+  background: rgba(20, 20, 20, 0.75);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+}
+
+.pause-card h1 {
+  margin: 0 0 10px;
+  font-size: 28px;
+  letter-spacing: 1px;
+}
+
+.pause-cta {
+  margin: 0 0 16px;
+  font-size: 18px;
+  color: #ffe082;
+}
+
+.pause-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #ccc;
+}

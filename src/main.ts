@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 import { Renderer } from './core/Renderer';
 import { Loop } from './core/Loop';
+import { InputManager } from './core/InputManager';
+import { FirstPersonCamera } from './core/FirstPersonCamera';
 import { DebugOverlay } from './ui/DebugOverlay';
+import { PauseOverlay } from './ui/PauseOverlay';
 
-const CHUNK_SIZE = 16; // used only for the debug "current chunk" readout in P0
+const CHUNK_SIZE = 16; // used only for the debug "current chunk" readout until P2
+const SKY_COLOR = 0x87ceeb;
 
 function bootstrap(): void {
   const container = document.getElementById('app');
@@ -12,29 +16,35 @@ function bootstrap(): void {
   const gfx = new Renderer(container);
   const { scene, camera } = gfx;
 
-  scene.background = new THREE.Color(0x202020);
-  camera.position.set(4, 3, 6);
-  camera.lookAt(0, 0.5, 0);
+  // --- Sky & fog ---
+  scene.background = new THREE.Color(SKY_COLOR);
+  scene.fog = new THREE.Fog(SKY_COLOR, 60, 160);
 
-  // --- P0 baseline objects: one test cube + grid helper ---
-  const cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
-  const cubeMaterial = new THREE.MeshNormalMaterial();
-  const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+  // --- Baseline objects (from P0): test cube + grid helper ---
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshNormalMaterial());
   cube.position.set(0, 0.5, 0);
   scene.add(cube);
+  scene.add(new THREE.GridHelper(64, 64, 0x666666, 0x3a3a3a));
 
-  const grid = new THREE.GridHelper(32, 32, 0x888888, 0x444444);
-  scene.add(grid);
+  // --- Input & camera ---
+  const input = new InputManager(gfx.renderer.domElement);
+  const fps = new FirstPersonCamera(camera, input);
+  camera.position.set(4, 3, 8);
+  fps.setLook(Math.atan2(4, 8), -0.25);
 
-  // --- Debug overlay (F3) ---
+  // --- UI ---
+  const pause = new PauseOverlay(() => input.requestLock());
+  input.onLockChanged((locked) => pause.setVisible(!locked));
   const debug = new DebugOverlay();
+  debug.addLine(() => `Yaw: ${THREE.MathUtils.radToDeg(fps.yaw).toFixed(1)}°  Pitch: ${THREE.MathUtils.radToDeg(fps.pitch).toFixed(1)}°`);
+  debug.addLine(() => `Pointer: ${input.locked ? 'locked' : 'free'}`);
 
   // --- Main loop ---
   const loop = new Loop();
   loop.onUpdate((dt) => {
     debug.beginFrame();
+    fps.update(dt);
     cube.rotation.y += dt * 0.8;
-    cube.rotation.x += dt * 0.3;
   });
   loop.onRender(() => {
     gfx.render();

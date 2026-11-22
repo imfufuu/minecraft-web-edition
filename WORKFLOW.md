@@ -1,14 +1,14 @@
 # Minecraft Web Edition — Workflow
 
 ## 当前阶段
-P1 — 渲染循环与第一人称相机
+P2 — 体素数据模型与单区块渲染
 
 ## 阶段状态机
 | 阶段 | 名称 | 状态 | 验收标准是否满足 | 核心指标记录 (DrawCalls/FPS等) | 备注 |
 |---|---|---|---|---|---|
 | P0 | 项目脚手架与调试面板 | done | yes | DrawCalls=2 (cube+grid), Triangles≈12+grid lines | Vite 8 + TS 7 + three 0.187 |
-| P1 | 渲染循环与第一人称相机 | in-progress | no | - | |
-| P2 | 体素数据模型与单区块渲染 | pending | no | - | |
+| P1 | 渲染循环与第一人称相机 | done | yes | DrawCalls=2, 60/144Hz 位移一致 (speed×dt) | YXZ 欧拉, pitch ±(90°−0.57°) |
+| P2 | 体素数据模型与单区块渲染 | in-progress | no | - | |
 | P3 | 区块化世界与种子地形 | pending | no | - | |
 | P4 | 跨区块面剔除与网格合并 | pending | no | - | |
 | P5 | 玩家物理与 AABB 碰撞 | pending | no | - | |
@@ -20,24 +20,27 @@ P1 — 渲染循环与第一人称相机
 | P11 | 可选进阶特性 | pending | no | - | |
 
 ## 当前任务
-实现 `src/core/InputManager.ts`（按键状态集合 + PointerLock + mousemove）与 `src/core/FirstPersonCamera.ts`（YXZ 欧拉角、pitch 钳制 ±89°、水平面 WASD 移动、Space/Shift 升降），并添加天空色 `0x87CEEB` 与雾。
+定义 `CHUNK_SIZE=16 / CHUNK_HEIGHT=64` 常量与 `Chunk`（`Uint8Array`，`index = x + z*16 + y*256`，越界返回 AIR），实现 6 面 `FaceData` 与 `ChunkMesher`（仅邻居为 AIR 时生成面，CCW 索引 `[0,1,2,2,1,3]`），用正弦高度函数填充单区块并以 1 个 Mesh 渲染。
 
 ## 阻塞项与风险
 无
 
 ## 下一步计划（当前任务完成后）
-P1 验收（锁定/ESC 提示层、60Hz 与 144Hz 速度一致、快速甩鼠标不翻转）后，进入 P2：`Chunk` Uint8Array 模型与单区块暴露面剔除 Mesher。
+P2 验收（16×16 地形块、背面剔除无漏洞、F3 Draw Calls === 1）后进入 P3：PRNG + fBm 噪声、`floorMod` 坐标转换、`World` 多区块管理。
 
 ## 架构快照（当前目录树）
 ```text
 src/
-├── main.ts                 # 入口：组装 Renderer / Loop / DebugOverlay，P0 测试立方体 + GridHelper
+├── main.ts                 # 入口：天空色 + Fog，组装 Renderer / Loop / Input / FPS 相机 / UI
 ├── core/
 │   ├── Renderer.ts         # WebGLRenderer + PerspectiveCamera + Scene 封装，resize 处理，info.autoReset=false
-│   └── Loop.ts             # rAF 主循环，dt = min(clock.getDelta(), MAX_DELTA=0.1)
+│   ├── Loop.ts             # rAF 主循环，dt = min(clock.getDelta(), MAX_DELTA=0.1)
+│   ├── InputManager.ts     # 按键 Set、mousemove 累积 delta、滚轮、PointerLock 请求/状态、blur 清键
+│   └── FirstPersonCamera.ts# YXZ 欧拉、pitch 钳制、yaw 驱动的水平移动、Space/Shift 升降、Ctrl 冲刺
 └── ui/
-    ├── DebugOverlay.ts     # F3 调试面板：FPS / Frame ms / Draw Calls / Triangles / Geometries / Pos / Chunk
-    └── styles.css          # 全屏无滚动条布局、调试面板样式
+    ├── DebugOverlay.ts     # F3 调试面板：FPS / Frame ms / Draw Calls / Triangles / Geometries / Pos / Chunk / Yaw / Pitch
+    ├── PauseOverlay.ts     # 指针未锁定时的"点击开始"提示层（ESC 后自动回显）
+    └── styles.css          # 全屏布局、调试面板、暂停层样式
 ```
 
 ## 关键决策与性能日志
@@ -47,3 +50,6 @@ src/
 - [2026-11-22 / P0] Delta Clamping（`MAX_DELTA = 0.1`）提前在 `Loop` 中落地，后续所有物理积分统一消费该 dt。
 - [2026-11-22 / P0] 依赖清单：仅 `three`（运行时）；`vite`、`typescript`、`@types/three`（开发）。未引入任何其他第三方库。
 - [2026-11-22 / P0] 性能基线：Draw Calls = 2（测试立方体 + GridHelper），dist JS 534 kB（gzip 133 kB，主要为 three 本体）。
+- [2026-11-22 / P1] 相机采用 `rotation.set(pitch, yaw, 0, 'YXZ')`，pitch 钳制在 ±(π/2−0.01)；水平基向量仅由 yaw 推导（`forward=(−sin,0,−cos)`, `right=(cos,0,−sin)`），避免抬头时走路变慢。
+- [2026-11-22 / P1] 输入层设计为"每帧 consume"模式（`consumeMouseDelta/consumeWheel`），事件只做累积，不在事件回调中改游戏状态，保证与主循环 dt 同步；`blur` 与解锁时清空按键集合防止粘键。
+- [2026-11-22 / P1] 雾使用线性 `THREE.Fog(0x87CEEB, 60, 160)` 与背景同色，后续 P10 视距加载时可按 RENDER_DISTANCE 调整 near/far。
