@@ -13,10 +13,19 @@ export interface MeshBuffers {
   faceCount: number;
 }
 
+/** Minimal world view the mesher needs: absolute-coordinate block lookup. */
+export interface BlockSource {
+  getBlock(wx: number, wy: number, wz: number): number;
+}
+
 /**
  * Builds a single merged geometry for one chunk.
- * A face is emitted only when the neighbouring voxel in that direction is AIR,
- * so internal faces between touching solid blocks never produce vertices.
+ * A face is emitted only when the neighbouring voxel in that direction is not solid.
+ * Neighbours inside the chunk are read directly from the chunk array; neighbours
+ * across a chunk border are resolved through `world.getBlock` (absolute coords),
+ * so faces between two touching chunks are culled exactly like internal faces.
+ * When no world is supplied (or the neighbour chunk is not loaded) border
+ * neighbours read as AIR and the border face is emitted.
  */
 export class ChunkMesher {
   // Growable scratch arrays reused across builds to avoid GC churn.
@@ -25,12 +34,14 @@ export class ChunkMesher {
   private colors: number[] = [];
   private indices: number[] = [];
 
-  build(chunk: Chunk): MeshBuffers {
+  build(chunk: Chunk, world?: BlockSource): MeshBuffers {
     this.positions.length = 0;
     this.normals.length = 0;
     this.colors.length = 0;
     this.indices.length = 0;
 
+    const originX = chunk.cx * CHUNK_SIZE;
+    const originZ = chunk.cz * CHUNK_SIZE;
     let vertexCount = 0;
     let faceCount = 0;
 
@@ -44,13 +55,26 @@ export class ChunkMesher {
 
           for (const face of FACES) {
             const [dx, dy, dz] = face.dir;
-            // Out-of-range neighbours read as AIR -> chunk boundary faces are emitted (refined in P4).
-            if (isSolid(chunk.getBlock(x + dx, y + dy, z + dz))) continue;
+            const nx = x + dx;
+            const ny = y + dy;
+            const nz = z + dz;
 
-            const [nx, ny, nz] = face.normal;
+            let neighbour: number;
+            if (nx >= 0 && nx < CHUNK_SIZE && nz >= 0 && nz < CHUNK_SIZE) {
+              // Inside this chunk (Chunk.getBlock handles y out of range -> AIR).
+              neighbour = chunk.getBlock(nx, ny, nz);
+            } else if (world) {
+              // Across a chunk border: ask the world using absolute coordinates.
+              neighbour = world.getBlock(originX + nx, ny, originZ + nz);
+            } else {
+              neighbour = BlockId.AIR;
+            }
+            if (isSolid(neighbour)) continue;
+
+            const [fnx, fny, fnz] = face.normal;
             for (const [cx, cy, cz] of face.corners) {
               this.positions.push(x + cx, y + cy, z + cz);
-              this.normals.push(nx, ny, nz);
+              this.normals.push(fnx, fny, fnz);
               this.colors.push(color[0], color[1], color[2]);
             }
             for (const i of FACE_INDICES) this.indices.push(vertexCount + i);
@@ -71,13 +95,15 @@ export class ChunkMesher {
     };
   }
 
-  /** Wraps mesher output in a BufferGeometry. Returns a geometry with 0 vertices for empty chunks. */
+  /** Wraps mesher output in a BufferGeometry with bounds computed for frustum culling. */
   static toGeometry(buffers: MeshBuffers): THREE.BufferGeometry {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
     geometry.setAttribute('normal', new THREE.BufferAttribute(buffers.normals, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(buffers.colors, 3));
     geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
     return geometry;
   }
 }

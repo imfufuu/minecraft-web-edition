@@ -5,10 +5,9 @@ import { InputManager } from './core/InputManager';
 import { FirstPersonCamera } from './core/FirstPersonCamera';
 import { DebugOverlay } from './ui/DebugOverlay';
 import { PauseOverlay } from './ui/PauseOverlay';
-import { CHUNK_SIZE, type Chunk } from './world/Chunk';
 import { World } from './world/World';
 import { TerrainGenerator } from './world/TerrainGenerator';
-import { ChunkMesher } from './mesh/ChunkMesher';
+import { ChunkMeshManager } from './mesh/ChunkMeshManager';
 import { worldToChunkCoords } from './utils/math';
 
 const SKY_COLOR = 0x87ceeb;
@@ -42,28 +41,12 @@ function bootstrap(): void {
   world.generateArea(-WORLD_RADIUS, WORLD_RADIUS);
   const genMs = performance.now() - t0;
 
-  // --- One merged mesh per chunk ---
-  const mesher = new ChunkMesher();
+  // --- One merged mesh per chunk (cross-chunk culling + frustum culling) ---
   const chunkMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const chunkMeshes = new Map<string, THREE.Mesh>();
-  let totalFaces = 0;
-
+  const meshes = new ChunkMeshManager(scene, world, chunkMaterial);
   const t1 = performance.now();
-  for (const chunk of world.chunks.values()) buildChunkMesh(chunk);
+  meshes.rebuildAll();
   const meshMs = performance.now() - t1;
-
-  function buildChunkMesh(chunk: Chunk): void {
-    const buffers = mesher.build(chunk);
-    totalFaces += buffers.faceCount;
-    chunk.dirty = false;
-    if (buffers.vertexCount === 0) return;
-    const geometry = ChunkMesher.toGeometry(buffers);
-    geometry.computeBoundingSphere();
-    const mesh = new THREE.Mesh(geometry, chunkMaterial);
-    mesh.position.set(chunk.cx * CHUNK_SIZE, 0, chunk.cz * CHUNK_SIZE);
-    scene.add(mesh);
-    chunkMeshes.set(chunk.key, mesh);
-  }
 
   // --- Input & camera: spawn above the origin column ---
   const input = new InputManager(gfx.renderer.domElement);
@@ -77,7 +60,7 @@ function bootstrap(): void {
   input.onLockChanged((locked) => pause.setVisible(!locked));
   const debug = new DebugOverlay();
   debug.addLine(() => `Yaw: ${THREE.MathUtils.radToDeg(fps.yaw).toFixed(1)}°  Pitch: ${THREE.MathUtils.radToDeg(fps.pitch).toFixed(1)}°`);
-  debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Faces: ${totalFaces}`);
+  debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Meshes: ${meshes.meshes.size}  Faces: ${meshes.totalFaces}`);
   debug.addLine(() => `Gen: ${genMs.toFixed(1)} ms  Mesh: ${meshMs.toFixed(1)} ms`);
   debug.addLine(() => {
     const p = camera.position;
@@ -89,6 +72,7 @@ function bootstrap(): void {
   loop.onUpdate((dt) => {
     debug.beginFrame();
     fps.update(dt);
+    meshes.rebuildDirty();
   });
   loop.onRender(() => {
     gfx.render();

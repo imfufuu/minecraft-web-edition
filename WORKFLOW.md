@@ -1,7 +1,7 @@
 # Minecraft Web Edition — Workflow
 
 ## 当前阶段
-P4 — 跨区块面剔除与网格合并
+P5 — 玩家物理与 AABB 碰撞
 
 ## 阶段状态机
 | 阶段 | 名称 | 状态 | 验收标准是否满足 | 核心指标记录 (DrawCalls/FPS等) | 备注 |
@@ -10,8 +10,8 @@ P4 — 跨区块面剔除与网格合并
 | P1 | 渲染循环与第一人称相机 | done | yes | DrawCalls=2, 60/144Hz 位移一致 (speed×dt) | YXZ 欧拉, pitch ±(90°−0.57°) |
 | P2 | 体素数据模型与单区块渲染 | done | yes | DrawCalls=1；满区块 4608 面（理论值一致）；12 个三角形 CCW 校验通过 | Uint8Array + 暴露面剔除 |
 | P3 | 区块化世界与种子地形 | done | yes | 25 区块 / DrawCalls=25；同 Seed 字节级一致；负坐标往返校验通过 | 手写 Simplex2D + 3 层 fBm |
-| P4 | 跨区块面剔除与网格合并 | in-progress | no | - | |
-| P5 | 玩家物理与 AABB 碰撞 | pending | no | - | |
+| P4 | 跨区块面剔除与网格合并 | done | yes | 25 区块面数 53,716→24,790（−53.8%），顶点 −53.8%；DrawCalls ≤ 视野内区块数，背对时 0 | 移除面数 == 理论接缝数 |
+| P5 | 玩家物理与 AABB 碰撞 | in-progress | no | - | |
 | P6 | 方块交互（挖掘/放置） | pending | no | - | |
 | P7 | 快捷栏、注册表与程序化纹理 | pending | no | - | |
 | P8 | 顶点光照与环境光遮蔽(AO) | pending | no | - | |
@@ -20,18 +20,18 @@ P4 — 跨区块面剔除与网格合并
 | P11 | 可选进阶特性 | pending | no | - | |
 
 ## 当前任务
-升级 `ChunkMesher`：区块边缘方块的邻居通过 `world.getBlock(wx+dx, wy+dy, wz+dz)` 查询真实方块；`computeBoundingBox/Sphere` 启用视锥剔除；对比优化前后总面数并记录压缩率。
+实现 `player/Player.ts`（AABB 0.6×1.8×0.6，眼高 1.62，F 键切换生存/飞行）与 `player/PhysicsAABB.ts`（重力 + 终端速度、Y→X→Z 分轴扫掠贴齐回退、onGround、跳跃 8.5、y<-30 重生）。
 
 ## 阻塞项与风险
 无
 
 ## 下一步计划（当前任务完成后）
-P4 验收（地下交界无隔断墙、背对区块 Draw Calls=0、压缩率记录）后进入 P5：玩家 AABB(0.6×1.8×0.6) 分轴扫掠碰撞、重力/跳跃、F 键切换飞行。
+P5 验收（站立 Y 恒定、贴墙滑行、顶头下落、1 格洞不可穿）后进入 P6：射线拾取、线框高亮、挖掘/放置与边界双区块重建。
 
 ## 架构快照（当前目录树）
 ```text
 src/
-├── main.ts                 # 入口：?seed= 解析，World.generateArea(-2,2)，每区块 1 Mesh（position=cx*16,cz*16），Loop / Input / UI
+├── main.ts                 # 入口：?seed= 解析，World.generateArea(-2,2)，ChunkMeshManager.rebuildAll/rebuildDirty，Loop / Input / UI
 ├── blocks/
 │   └── BlockTypes.ts       # BlockId (as const) + 临时纯色表 BLOCK_COLORS + isSolid
 ├── world/
@@ -44,7 +44,8 @@ src/
 │   └── math.ts             # floorMod、worldToChunkCoords、chunkToWorld、clamp/lerp/smoothstep
 ├── mesh/
 │   ├── FaceData.ts         # 6 面：dir / normal / 4 corners，FACE_INDICES=[0,1,2,2,1,3]（CCW 朝外）
-│   └── ChunkMesher.ts      # 暴露面剔除 -> positions/normals/colors/indices -> BufferGeometry
+│   ├── ChunkMesher.ts      # 暴露面剔除；边缘邻居经 world.getBlock 跨区块查询；toGeometry 计算 BoundingBox/Sphere
+│   └── ChunkMeshManager.ts # Map<key, Mesh>，rebuild = remove(dispose) + 新建；rebuildDirty / rebuildAll / remove；全空区块不建 Mesh
 ├── core/
 │   ├── Renderer.ts         # WebGLRenderer + PerspectiveCamera + Scene 封装，resize 处理，info.autoReset=false
 │   ├── Loop.ts             # rAF 主循环，dt = min(clock.getDelta(), MAX_DELTA=0.1)
@@ -75,3 +76,6 @@ src/
 - [2026-11-22 / P3] 坐标铁律落地：`worldToChunkCoords` 先 `Math.floor` 再 `floorMod`，脚本验证 `[-40, 40]` 全范围 `cx*16+lx === floor(wx)`；`x=0` 两侧高度巧合率 9.7%（无镜像）。
 - [2026-11-22 / P3] 确定性验证：同 seed 25 区块字节级一致；单独生成 (1,1) 与批量生成一致（与顺序无关）；不同 seed 差异 49,713 字节。`src/` 中 `Math.random` = 0 处。
 - [2026-11-22 / P3] 性能基线（P4 优化前，仅区块内剔除）：25 区块 Draw Calls = 25；总面数由 F3 "Faces" 行实时显示，P4 将以此为基准计算压缩率。
+- [2026-11-22 / P4] Mesher 引入 `BlockSource` 接口（仅 `getBlock(wx,wy,wz)`），区块内部邻居直接读本地数组（快路径），仅 x/z 越界时走 `world.getBlock`；未传 world 或邻居区块未加载时按 AIR 处理（保留外墙，P10 加载邻居后 dirty 重建即可消除）。
+- [2026-11-22 / P4] 性能日志：5×5 区块，面数 53,716 → 24,790（**−53.8%**，移除 28,926 面 == 2 × 内部接缝实心接触数，精确吻合）；顶点 214,864 → 99,160；三角形 49,580。脚本扫描 3 个区块全部输出面，邻居为实心的"漏网面" = 0。
+- [2026-11-22 / P4] 显存管理集中到 `ChunkMeshManager`：任何重建/移除路径都经 `remove(key)` → `scene.remove` + `geometry.dispose()`；Mesh 使用 `matrixAutoUpdate=false` 减少每帧矩阵更新。
