@@ -45,12 +45,48 @@ export class InputManager {
   };
 
   private readonly onMouseMove = (e: MouseEvent): void => {
+    // Locked mode: only movementX/Y are meaningful (clientX/Y stay frozen).
     if (this.mode === 'locked') {
       this.mouseDX += e.movementX;
       this.mouseDY += e.movementY;
-    } else if (this.mode === 'fallback' && e.buttons !== 0) {
-      this.mouseDX += e.movementX;
-      this.mouseDY += e.movementY;
+    }
+  };
+
+  // Fallback mode uses Pointer Events with manual clientX/Y deltas: works for mouse,
+  // touch and trackpads alike and does not depend on movementX (0 in some browsers
+  // when the pointer is not locked).
+  private dragPointerId: number | null = null;
+  private dragLastX = 0;
+  private dragLastY = 0;
+
+  private readonly onPointerDown = (e: PointerEvent): void => {
+    if (this.mode !== 'fallback') return;
+    if (this.dragPointerId !== null) return;
+    this.dragPointerId = e.pointerId;
+    this.dragLastX = e.clientX;
+    this.dragLastY = e.clientY;
+    try {
+      this.element.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture is best-effort */
+    }
+  };
+
+  private readonly onPointerMove = (e: PointerEvent): void => {
+    if (this.mode !== 'fallback' || e.pointerId !== this.dragPointerId) return;
+    this.mouseDX += e.clientX - this.dragLastX;
+    this.mouseDY += e.clientY - this.dragLastY;
+    this.dragLastX = e.clientX;
+    this.dragLastY = e.clientY;
+  };
+
+  private readonly onPointerUp = (e: PointerEvent): void => {
+    if (e.pointerId !== this.dragPointerId) return;
+    this.dragPointerId = null;
+    try {
+      this.element.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
     }
   };
 
@@ -94,6 +130,11 @@ export class InputManager {
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('mousemove', this.onMouseMove);
     element.addEventListener('mousedown', this.onMouseDown);
+    element.addEventListener('pointerdown', this.onPointerDown);
+    element.addEventListener('pointermove', this.onPointerMove);
+    element.addEventListener('pointerup', this.onPointerUp);
+    element.addEventListener('pointercancel', this.onPointerUp);
+    element.style.touchAction = 'none';
     element.addEventListener('wheel', this.onWheel, { passive: false });
     element.addEventListener('contextmenu', this.onContextMenu);
     document.addEventListener('pointerlockchange', this.onLockChange);
@@ -112,6 +153,11 @@ export class InputManager {
 
   get captureMode(): CaptureMode {
     return this.mode;
+  }
+
+  /** Whether the Pointer Lock API exists at all in this browser. */
+  static get pointerLockSupported(): boolean {
+    return typeof HTMLElement !== 'undefined' && typeof HTMLElement.prototype.requestPointerLock === 'function';
   }
 
   /**
@@ -208,6 +254,7 @@ export class InputManager {
     this.keys.clear();
     this.mouseDX = 0;
     this.mouseDY = 0;
+    this.dragPointerId = null;
     for (const fn of this.modeListeners) fn(mode);
   }
 
@@ -225,6 +272,10 @@ export class InputManager {
     window.removeEventListener('blur', this.onBlur);
     document.removeEventListener('mousemove', this.onMouseMove);
     this.element.removeEventListener('mousedown', this.onMouseDown);
+    this.element.removeEventListener('pointerdown', this.onPointerDown);
+    this.element.removeEventListener('pointermove', this.onPointerMove);
+    this.element.removeEventListener('pointerup', this.onPointerUp);
+    this.element.removeEventListener('pointercancel', this.onPointerUp);
     this.element.removeEventListener('wheel', this.onWheel);
     this.element.removeEventListener('contextmenu', this.onContextMenu);
     document.removeEventListener('pointerlockchange', this.onLockChange);

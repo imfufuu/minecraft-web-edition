@@ -7,13 +7,15 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "smoke": "vite build --config test/headless/vite.config.ts && node test/headless/run.mjs lock-ok && node test/headless/run.mjs lock-error && node test/headless/run.mjs lock-silent"
   },
   "dependencies": {
     "three": "^0.187.0"
   },
   "devDependencies": {
     "@types/three": "^0.187.0",
+    "jsdom": "^31.0.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
   }

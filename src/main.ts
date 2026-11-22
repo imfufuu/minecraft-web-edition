@@ -10,6 +10,7 @@ import { TerrainGenerator } from './world/TerrainGenerator';
 import { ChunkMeshManager } from './mesh/ChunkMeshManager';
 import { worldToChunkCoords } from './utils/math';
 import { Player } from './player/Player';
+import { installGlobalErrorHandlers, showError } from './ui/ErrorBar';
 
 const SKY_COLOR = 0x87ceeb;
 const DEFAULT_SEED = 'minecraft-web';
@@ -20,7 +21,22 @@ function resolveSeed(): string {
   return param && param.length > 0 ? param : DEFAULT_SEED;
 }
 
-function bootstrap(): void {
+/** Handle exposed on `window.__mwe` for debugging / automated tests. */
+export interface GameHandle {
+  input: InputManager;
+  camera: FirstPersonCamera;
+  player: Player;
+  loop: Loop;
+  frames: () => number;
+}
+
+declare global {
+  interface Window {
+    __mwe?: GameHandle;
+  }
+}
+
+export function bootstrap(): GameHandle {
   const container = document.getElementById('app');
   if (!container) throw new Error('#app container not found');
 
@@ -59,6 +75,10 @@ function bootstrap(): void {
 
   // --- UI ---
   const pause = new PauseOverlay(() => input.requestLock());
+  const touch = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  pause.setDiagnostics(
+    `build ${__BUILD_ID__} · ${gfx.contextKind} · pointer-lock ${InputManager.pointerLockSupported ? 'yes' : 'no'} · touch ${touch ? 'yes' : 'no'}`,
+  );
   const modeBadge = document.createElement('div');
   modeBadge.className = 'mode-badge hidden';
   modeBadge.textContent = '拖拽环顾模式 · ESC 返回菜单 / Drag to look · ESC for menu';
@@ -95,7 +115,20 @@ function bootstrap(): void {
     const c = worldToChunkCoords(p.x, p.y, p.z);
     debug.endFrame(gfx.info, { x: p.x, y: p.y, z: p.z }, { cx: c.cx, cz: c.cz });
   });
+  let frameCount = 0;
+  loop.onUpdate(() => {
+    frameCount++;
+  });
   loop.start();
+
+  return { input, camera: fps, player, loop, frames: () => frameCount };
 }
 
-bootstrap();
+if (!import.meta.env.SSR) {
+  installGlobalErrorHandlers();
+  try {
+    window.__mwe = bootstrap();
+  } catch (err) {
+    showError(err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err));
+  }
+}

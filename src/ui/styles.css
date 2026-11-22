@@ -114,3 +114,23 @@ body {
 .mode-badge.hidden {
   display: none;
 }
+
+.pause-diag {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: #8a8a8a;
+}
+
+.error-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 200;
+  padding: 8px 12px;
+  background: #b71c1c;
+  color: #fff;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
