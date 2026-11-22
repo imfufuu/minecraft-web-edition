@@ -114,3 +114,56 @@ body {
 .mode-badge.hidden {
   display: none;
 }
+
+.pause-diag {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: #8a8a8a;
+}
+
+.error-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 200;
+  padding: 8px 12px;
+  background: #b71c1c;
+  color: #fff;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  z-index: 40;
+  pointer-events: none;
+  mix-blend-mode: difference;
+}
+
+.crosshair::before,
+.crosshair::after {
+  content: '';
+  position: absolute;
+  background: #fff;
+}
+
+.crosshair::before {
+  left: 9px;
+  top: 0;
+  width: 2px;
+  height: 20px;
+}
+
+.crosshair::after {
+  left: 0;
+  top: 9px;
+  width: 20px;
+  height: 2px;
+}

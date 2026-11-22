@@ -10,6 +10,8 @@ import { TerrainGenerator } from './world/TerrainGenerator';
 import { ChunkMeshManager } from './mesh/ChunkMeshManager';
 import { worldToChunkCoords } from './utils/math';
 import { Player } from './player/Player';
+import { BlockInteraction } from './player/BlockInteraction';
+import { installGlobalErrorHandlers, showError } from './ui/ErrorBar';
 
 const SKY_COLOR = 0x87ceeb;
 const DEFAULT_SEED = 'minecraft-web';
@@ -20,7 +22,24 @@ function resolveSeed(): string {
   return param && param.length > 0 ? param : DEFAULT_SEED;
 }
 
-function bootstrap(): void {
+/** Handle exposed on `window.__mwe` for debugging / automated tests. */
+export interface GameHandle {
+  input: InputManager;
+  camera: FirstPersonCamera;
+  player: Player;
+  interaction: BlockInteraction;
+  world: World;
+  loop: Loop;
+  frames: () => number;
+}
+
+declare global {
+  interface Window {
+    __mwe?: GameHandle;
+  }
+}
+
+export function bootstrap(): GameHandle {
   const container = document.getElementById('app');
   if (!container) throw new Error('#app container not found');
 
@@ -56,9 +75,19 @@ function bootstrap(): void {
   player.setSpawn(0.5, world.generator.heightAt(0, 0) + 1, 0.5);
   fps.setLook(Math.PI * 0.75, -0.15);
   const eye = new THREE.Vector3();
+  const interaction = new BlockInteraction(world, player, camera, input, scene);
+
+  // Crosshair
+  const crosshair = document.createElement('div');
+  crosshair.className = 'crosshair';
+  document.body.appendChild(crosshair);
 
   // --- UI ---
   const pause = new PauseOverlay(() => input.requestLock());
+  const touch = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  pause.setDiagnostics(
+    `build ${__BUILD_ID__} · ${gfx.contextKind} · pointer-lock ${InputManager.pointerLockSupported ? 'yes' : 'no'} · touch ${touch ? 'yes' : 'no'}`,
+  );
   const modeBadge = document.createElement('div');
   modeBadge.className = 'mode-badge hidden';
   modeBadge.textContent = '拖拽环顾模式 · ESC 返回菜单 / Drag to look · ESC for menu';
@@ -75,6 +104,12 @@ function bootstrap(): void {
   debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Meshes: ${meshes.meshes.size}  Faces: ${meshes.totalFaces}`);
   debug.addLine(() => `Gen: ${genMs.toFixed(1)} ms  Mesh: ${meshMs.toFixed(1)} ms`);
   debug.addLine(() => {
+    const h = interaction.hit;
+    return h
+      ? `Target: ${h.x}, ${h.y}, ${h.z}  face: ${h.nx}, ${h.ny}, ${h.nz}  dist: ${h.distance.toFixed(2)}  id: ${world.getBlock(h.x, h.y, h.z)}`
+      : 'Target: none';
+  });
+  debug.addLine(() => {
     const p = player.position;
     const v = player.velocity;
     return `Mode: ${player.mode} [F]  onGround: ${player.onGround}  Vel: ${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}  Feet: ${p.y.toFixed(4)}`;
@@ -87,6 +122,8 @@ function bootstrap(): void {
     fps.update();
     player.update(dt, fps.yaw);
     fps.setEyePosition(player.getEyePosition(eye));
+    camera.updateMatrixWorld();
+    interaction.update(performance.now());
     meshes.rebuildDirty();
   });
   loop.onRender(() => {
@@ -95,7 +132,20 @@ function bootstrap(): void {
     const c = worldToChunkCoords(p.x, p.y, p.z);
     debug.endFrame(gfx.info, { x: p.x, y: p.y, z: p.z }, { cx: c.cx, cz: c.cz });
   });
+  let frameCount = 0;
+  loop.onUpdate(() => {
+    frameCount++;
+  });
   loop.start();
+
+  return { input, camera: fps, player, interaction, world, loop, frames: () => frameCount };
 }
 
-bootstrap();
+if (!import.meta.env.SSR) {
+  installGlobalErrorHandlers();
+  try {
+    window.__mwe = bootstrap();
+  } catch (err) {
+    showError(err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err));
+  }
+}

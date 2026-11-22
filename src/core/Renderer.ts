@@ -14,7 +14,12 @@ export class Renderer {
   constructor(container: HTMLElement) {
     this.container = container;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    try {
+      this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(`WebGL is not available in this browser: ${reason}`);
+    }
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight, false);
     // Keep render.calls/triangles valid for the whole frame; we reset manually in Loop.
@@ -34,6 +39,13 @@ export class Renderer {
 
   get info(): THREE.WebGLInfo {
     return this.renderer.info;
+  }
+
+  /** "webgl2" or "webgl" — for diagnostics. */
+  get contextKind(): string {
+    const ctx: unknown = this.renderer.getContext();
+    if (typeof WebGL2RenderingContext !== 'undefined' && ctx instanceof WebGL2RenderingContext) return 'webgl2';
+    return 'webgl';
   }
 
   resize(): void {
