@@ -5,30 +5,19 @@ import { InputManager } from './core/InputManager';
 import { FirstPersonCamera } from './core/FirstPersonCamera';
 import { DebugOverlay } from './ui/DebugOverlay';
 import { PauseOverlay } from './ui/PauseOverlay';
-import { BlockId } from './blocks/BlockTypes';
-import { Chunk, CHUNK_HEIGHT, CHUNK_SIZE } from './world/Chunk';
+import { CHUNK_SIZE, type Chunk } from './world/Chunk';
+import { World } from './world/World';
+import { TerrainGenerator } from './world/TerrainGenerator';
 import { ChunkMesher } from './mesh/ChunkMesher';
+import { worldToChunkCoords } from './utils/math';
 
 const SKY_COLOR = 0x87ceeb;
+const DEFAULT_SEED = 'minecraft-web';
+const WORLD_RADIUS = 2; // [-2, 2] -> 5×5 chunks
 
-/**
- * P2 placeholder terrain: deterministic sine-wave heightmap for a single chunk.
- * Replaced by seeded fBm noise in P3.
- */
-function fillTestChunk(chunk: Chunk): void {
-  for (let z = 0; z < CHUNK_SIZE; z++) {
-    for (let x = 0; x < CHUNK_SIZE; x++) {
-      const h = Math.floor(20 + Math.sin(x * 0.45) * 3 + Math.cos(z * 0.35) * 3 + Math.sin((x + z) * 0.2) * 2);
-      for (let y = 0; y <= h && y < CHUNK_HEIGHT; y++) {
-        let id: BlockId;
-        if (y === 0) id = BlockId.BEDROCK;
-        else if (y === h) id = BlockId.GRASS;
-        else if (y >= h - 3) id = BlockId.DIRT;
-        else id = BlockId.STONE;
-        chunk.setBlock(x, y, z, id);
-      }
-    }
-  }
+function resolveSeed(): string {
+  const param = new URLSearchParams(window.location.search).get('seed');
+  return param && param.length > 0 ? param : DEFAULT_SEED;
 }
 
 function bootstrap(): void {
@@ -38,43 +27,62 @@ function bootstrap(): void {
   const gfx = new Renderer(container);
   const { scene, camera } = gfx;
 
-  // --- Sky & fog ---
+  // --- Sky, fog, light ---
   scene.background = new THREE.Color(SKY_COLOR);
   scene.fog = new THREE.Fog(SKY_COLOR, 60, 160);
-
-  // --- Lighting (needed for MeshLambertMaterial to show face direction) ---
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const sun = new THREE.DirectionalLight(0xffffff, 1.6);
   sun.position.set(0.5, 1, 0.3);
   scene.add(sun);
 
-  // --- Single chunk: data -> mesher -> 1 merged mesh ---
-  const chunk = new Chunk(0, 0);
-  fillTestChunk(chunk);
+  // --- World: seeded terrain, 5×5 chunks ---
+  const seed = resolveSeed();
+  const world = new World(new TerrainGenerator(seed));
+  const t0 = performance.now();
+  world.generateArea(-WORLD_RADIUS, WORLD_RADIUS);
+  const genMs = performance.now() - t0;
 
+  // --- One merged mesh per chunk ---
   const mesher = new ChunkMesher();
-  const buffers = mesher.build(chunk);
-  const geometry = ChunkMesher.toGeometry(buffers);
-  geometry.computeBoundingSphere();
-  chunk.dirty = false;
-
   const chunkMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
-  const chunkMesh = new THREE.Mesh(geometry, chunkMaterial);
-  chunkMesh.position.set(chunk.cx * CHUNK_SIZE, 0, chunk.cz * CHUNK_SIZE);
-  scene.add(chunkMesh);
+  const chunkMeshes = new Map<string, THREE.Mesh>();
+  let totalFaces = 0;
 
-  // --- Input & camera ---
+  const t1 = performance.now();
+  for (const chunk of world.chunks.values()) buildChunkMesh(chunk);
+  const meshMs = performance.now() - t1;
+
+  function buildChunkMesh(chunk: Chunk): void {
+    const buffers = mesher.build(chunk);
+    totalFaces += buffers.faceCount;
+    chunk.dirty = false;
+    if (buffers.vertexCount === 0) return;
+    const geometry = ChunkMesher.toGeometry(buffers);
+    geometry.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geometry, chunkMaterial);
+    mesh.position.set(chunk.cx * CHUNK_SIZE, 0, chunk.cz * CHUNK_SIZE);
+    scene.add(mesh);
+    chunkMeshes.set(chunk.key, mesh);
+  }
+
+  // --- Input & camera: spawn above the origin column ---
   const input = new InputManager(gfx.renderer.domElement);
   const fps = new FirstPersonCamera(camera, input);
-  camera.position.set(8, 30, 30);
-  fps.setLook(0, -0.35);
+  const spawnY = world.generator.heightAt(0, 0) + 12;
+  camera.position.set(0.5, spawnY, 0.5);
+  fps.setLook(Math.PI * 0.75, -0.35);
 
   // --- UI ---
   const pause = new PauseOverlay(() => input.requestLock());
   input.onLockChanged((locked) => pause.setVisible(!locked));
   const debug = new DebugOverlay();
   debug.addLine(() => `Yaw: ${THREE.MathUtils.radToDeg(fps.yaw).toFixed(1)}°  Pitch: ${THREE.MathUtils.radToDeg(fps.pitch).toFixed(1)}°`);
-  debug.addLine(() => `Chunk mesh: ${buffers.faceCount} faces / ${buffers.vertexCount} verts`);
+  debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Faces: ${totalFaces}`);
+  debug.addLine(() => `Gen: ${genMs.toFixed(1)} ms  Mesh: ${meshMs.toFixed(1)} ms`);
+  debug.addLine(() => {
+    const p = camera.position;
+    return `Block under: ${world.getBlock(p.x, p.y - 1, p.z)}  Surface h: ${world.generator.heightAt(Math.floor(p.x), Math.floor(p.z))}`;
+  });
 
   // --- Main loop ---
   const loop = new Loop();
@@ -85,11 +93,8 @@ function bootstrap(): void {
   loop.onRender(() => {
     gfx.render();
     const p = camera.position;
-    debug.endFrame(
-      gfx.info,
-      { x: p.x, y: p.y, z: p.z },
-      { cx: Math.floor(p.x / CHUNK_SIZE), cz: Math.floor(p.z / CHUNK_SIZE) },
-    );
+    const c = worldToChunkCoords(p.x, p.y, p.z);
+    debug.endFrame(gfx.info, { x: p.x, y: p.y, z: p.z }, { cx: c.cx, cz: c.cz });
   });
   loop.start();
 }
