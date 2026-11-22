@@ -9,6 +9,7 @@ import { World } from './world/World';
 import { TerrainGenerator } from './world/TerrainGenerator';
 import { ChunkMeshManager } from './mesh/ChunkMeshManager';
 import { worldToChunkCoords } from './utils/math';
+import { Player } from './player/Player';
 
 const SKY_COLOR = 0x87ceeb;
 const DEFAULT_SEED = 'minecraft-web';
@@ -48,12 +49,13 @@ function bootstrap(): void {
   meshes.rebuildAll();
   const meshMs = performance.now() - t1;
 
-  // --- Input & camera: spawn above the origin column ---
+  // --- Input, camera & player: spawn on the surface at the origin column ---
   const input = new InputManager(gfx.renderer.domElement);
   const fps = new FirstPersonCamera(camera, input);
-  const spawnY = world.generator.heightAt(0, 0) + 12;
-  camera.position.set(0.5, spawnY, 0.5);
-  fps.setLook(Math.PI * 0.75, -0.35);
+  const player = new Player(input, world);
+  player.setSpawn(0.5, world.generator.heightAt(0, 0) + 1, 0.5);
+  fps.setLook(Math.PI * 0.75, -0.15);
+  const eye = new THREE.Vector3();
 
   // --- UI ---
   const pause = new PauseOverlay(() => input.requestLock());
@@ -73,20 +75,23 @@ function bootstrap(): void {
   debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Meshes: ${meshes.meshes.size}  Faces: ${meshes.totalFaces}`);
   debug.addLine(() => `Gen: ${genMs.toFixed(1)} ms  Mesh: ${meshMs.toFixed(1)} ms`);
   debug.addLine(() => {
-    const p = camera.position;
-    return `Block under: ${world.getBlock(p.x, p.y - 1, p.z)}  Surface h: ${world.generator.heightAt(Math.floor(p.x), Math.floor(p.z))}`;
+    const p = player.position;
+    const v = player.velocity;
+    return `Mode: ${player.mode} [F]  onGround: ${player.onGround}  Vel: ${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}  Feet: ${p.y.toFixed(4)}`;
   });
 
   // --- Main loop ---
   const loop = new Loop();
   loop.onUpdate((dt) => {
     debug.beginFrame();
-    fps.update(dt);
+    fps.update();
+    player.update(dt, fps.yaw);
+    fps.setEyePosition(player.getEyePosition(eye));
     meshes.rebuildDirty();
   });
   loop.onRender(() => {
     gfx.render();
-    const p = camera.position;
+    const p = player.position;
     const c = worldToChunkCoords(p.x, p.y, p.z);
     debug.endFrame(gfx.info, { x: p.x, y: p.y, z: p.z }, { cx: c.cx, cz: c.cz });
   });
