@@ -49,6 +49,8 @@ export class TerrainGenerator {
       else id = BlockId.STONE;
       data[base + y * yStride] = id;
     }
+    // Still water fills every column below sea level up to (and including) SEA_LEVEL.
+    for (let y = h + 1; y <= SEA_LEVEL; y++) data[base + y * yStride] = BlockId.WATER;
   }
 
   /** Fill `chunk.data` in place using absolute world coordinates for every column. */

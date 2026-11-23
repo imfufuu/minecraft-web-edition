@@ -11,10 +11,21 @@ export const BlockId = {
   PLANKS: 8,
   BRICK: 9,
   COBBLESTONE: 10,
+  WATER: 11,
 } as const;
 
 export type BlockId = (typeof BlockId)[keyof typeof BlockId];
 
+/** Solid = blocks the player and the targeting ray. Water is passable. */
 export function isSolid(id: number): boolean {
-  return id !== BlockId.AIR;
+  return id !== BlockId.AIR && id !== BlockId.WATER;
+}
+
+/** Opaque = hides the faces of neighbouring blocks. Only air and water let faces through. */
+export function isOpaque(id: number): boolean {
+  return id !== BlockId.AIR && id !== BlockId.WATER;
+}
+
+export function isLiquid(id: number): boolean {
+  return id === BlockId.WATER;
 }

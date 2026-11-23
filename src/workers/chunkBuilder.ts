@@ -49,6 +49,7 @@ export class ChunkBuilder {
       indices: m.indices,
       vertexCount: m.vertexCount,
       faceCount: m.faceCount,
+      water: m.water,
       workMs: performance.now() - t0,
     };
   }

@@ -1,4 +1,4 @@
-import type { MesherOptions } from '../mesh/ChunkMesher';
+import type { GeometryBuffers, MesherOptions } from '../mesh/ChunkMesher';
 
 /** A sparse diff serialised for structured cloning. */
 export interface DiffPayload {
@@ -26,20 +26,15 @@ export interface BuildRequest {
 
 export type WorkerInbound = ConfigureMessage | BuildRequest;
 
-export interface BuildResult {
+export interface BuildResult extends GeometryBuffers {
   type: 'built';
   id: number;
   cx: number;
   cz: number;
   /** Inner 16×H×16 chunk data (chunk layout). */
   data: Uint8Array;
-  positions: Float32Array;
-  normals: Float32Array;
-  uvs: Float32Array;
-  colors: Float32Array;
-  indices: Uint32Array;
-  vertexCount: number;
-  faceCount: number;
+  /** Translucent water geometry (may be empty). */
+  water: GeometryBuffers;
   /** Wall-clock milliseconds spent in generation + meshing inside the worker. */
   workMs: number;
 }
@@ -48,5 +43,6 @@ export type WorkerOutbound = BuildResult;
 
 /** Buffers in a BuildResult that must be transferred (not copied) back to the main thread. */
 export function transferablesOf(r: BuildResult): ArrayBuffer[] {
-  return [r.data.buffer, r.positions.buffer, r.normals.buffer, r.uvs.buffer, r.colors.buffer, r.indices.buffer] as ArrayBuffer[];
+  const g = (b: GeometryBuffers): ArrayBuffer[] => [b.positions.buffer, b.normals.buffer, b.uvs.buffer, b.colors.buffer, b.indices.buffer] as ArrayBuffer[];
+  return [r.data.buffer as ArrayBuffer, ...g(r), ...g(r.water)];
 }

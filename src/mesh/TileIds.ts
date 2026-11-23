@@ -12,7 +12,8 @@ export const Tile = {
   PLANKS: 9,
   BRICK: 10,
   COBBLESTONE: 11,
+  WATER: 12,
 } as const;
 
 export type Tile = (typeof Tile)[keyof typeof Tile];
-export const TILE_COUNT = 12;
+export const TILE_COUNT = 13;

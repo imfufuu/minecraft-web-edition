@@ -17,10 +17,10 @@ P11 — 可选进阶特性（树木 → 水面 → 昼夜）
 | P8 | 顶点光照与环境光遮蔽(AO) | done | yes | 无灯光 MeshBasicMaterial；AO 值手算全对（1.0/.82/.65/.45）；镜像对称；24 三角形 CCW | F4 AO / F6 明暗 开关 |
 | P9 | IndexedDB 增量存档与恢复 | done | yes | 放置/破坏→flush→重新 bootstrap：方块/位置/热栏/模式全部恢复；save 1.3 ms；clearAll 后为新世界 | 存档仅含 diff，不存整区块 |
 | P10 | Web Worker 多线程与视距卸载 | done | yes | rd=7 → 177 区块；Worker 内生成+网格 ≈5.5 ms/块；主线程 ≤2 上传/帧；远离后 69/69 网格全部 dispose；Worker 输出与主线程逐字节一致 | Worker 包 7.9 kB，不含 three |
-| P11 | 可选进阶特性 | in-progress | no | 树木 ✓：13×13 区块 142 棵（1/305 列），间距 ≥3，跨区块树冠无缝，Worker 与主线程逐字节一致，生成 0.17 ms/块 | 顺序：树木 ✓ → 水面 → 昼夜 |
+| P11 | 可选进阶特性 | in-progress | no | 树木 ✓：13×13 区块 142 棵，间距 ≥3，跨区块无缝，0.17 ms/块；水面 ✓：28,208 水块/9,967 列精确填充 (h, 20]，每水柱恰 1 个顶面且无水-水面，169 块 → 169+104 网格，48 内部水区块 Worker 输出逐字节一致 | 顺序：树木 ✓ → 水面 ✓ → 昼夜 |
 
 ## 当前任务
-P11-b 水面：`TerrainGenerator.fillColumn` 在 h < SEA_LEVEL 的列把 (h, SEA_LEVEL] 填为 `WATER`（新 BlockId 11，`isSolid=false`、不参与碰撞、可穿行）；mesher 拆成两组缓冲：不透明组照旧，水面组仅输出朝上的顶面（y=SEA_LEVEL）并略下沉 0.1；`ChunkMeshManager` 每区块最多 2 个 Mesh（第二个用 `transparent: true, opacity 0.6, depthWrite false` 的材质），DrawCalls 上限 = 2×区块数；相邻水块之间不出面；Worker 协议增加 water 缓冲。
+P11-c 昼夜循环：`core/DayNight.ts` 以 `elapsed` 驱动 0–1 的时间相位（默认 10 分钟一昼夜，`?day=` 固定），输出天空色 / 雾色 / 全局光照乘数；不重建网格——区块材质改为 `ShaderMaterial`（或 `onBeforeCompile` 注入 `uniform float uDaylight`）把顶点色乘以 uDaylight，水面材质同样；F3 显示时间与 daylight；ESC 菜单可暂停时间推进。验收：DrawCalls 不变、无逐帧 CPU 重建、夜间最低亮度 ≥0.25（可见）。
 
 ## 阻塞项与风险
 无。
@@ -30,7 +30,7 @@ P11-b 水面：`TerrainGenerator.fillColumn` 在 h < SEA_LEVEL 的列把 (h, SEA
 风险备注：Worker 路径与主线程 `rebuildDirty` 路径在**视距边缘**可能不一致：主线程重建（玩家编辑后）对未加载邻区块按 AIR 处理，而 Worker 用 padded 生成数据。只影响被编辑且位于加载边缘的区块，玩家靠近后邻区块加载即恢复。
 
 ## 下一步计划（当前任务完成后）
-P11-b 水面（SEA_LEVEL=20 以下填 Water，半透明第二材质/第二网格，仍 ≤2 draw calls/区块）；P11-c 昼夜（天空色 + 顶点色全局乘数 uniform，不重建网格）；P11-d Greedy Meshing（可选，需与 AO 兼容：仅合并 AO 四角相同的面）。
+P11-d Greedy Meshing（可选，需与 AO 兼容：仅合并四角 AO 与 tile 相同的面；水面单独合并）；P11-e 音效/粒子（可选）。全部可选项完成后进入收尾：README、性能基线表、已知问题清单。
 
 ## 架构快照（当前目录树）
 ```text
@@ -60,8 +60,8 @@ src/
 │   ├── TextureAtlas.ts     # paintAtlas(seed) 纯 TS 像素绘制 → RGBA；DataTexture(Nearest, sRGB)；getTileUV(内缩 0.001)；canvas 副本供缩略图
 │   ├── AtlasLayout.ts      # 图集常量 + getTileUV（无 three 依赖，供 Worker 使用）
 │   ├── Lighting.ts         # FACE_SHADE、AO_CURVE、vertexAO(side1,side2,corner)、QUAD_INDICES(_FLIPPED)、shouldFlipQuad
-│   ├── ChunkMesher.ts      # 暴露面剔除；跨区块 solidAt；UV；顶点色 = shade × AO；对角线翻转；options{ao, shading}
-│   └── ChunkMeshManager.ts # Map<key, Mesh>，rebuild = remove(dispose) + 新建；rebuildDirty / rebuildAll / remove；全空区块不建 Mesh
+│   ├── ChunkMesher.ts      # 两组几何：不透明(isOpaque 剔除, AO) + 水面(仅对空气出面, 顶面下沉 0.125, 无 AO)；options{ao, shading}
+│   └── ChunkMeshManager.ts # 每区块 ≤2 Mesh（opaque + water renderOrder 1）；install/rebuild = remove(dispose 两者) + 新建；faces/waterFaces/disposed 计数
 ├── core/
 │   ├── Renderer.ts         # WebGLRenderer + PerspectiveCamera + Scene 封装，resize 处理，info.autoReset=false
 │   ├── Loop.ts             # rAF 主循环，dt = min(clock.getDelta(), MAX_DELTA=0.1)
@@ -126,3 +126,7 @@ src/
 - [2026-11-22 / P10] 生存模式下脚下区块未加载时物理暂停（`Player.groundReady`），避免穿透未加载地形；出生/读档所在区块在 bootstrap 内同步构建（≈3 ms）。`?rd=N` (2–12) 可调视距。
 - [2026-11-22 / P11-a] 树木放置为纯函数 `(seed, wx, wz) → Tree|null`：候选 hash < 1/180，再检查 5×5 邻域内无更小 hash 的候选（天然间距 ≥3，且无需任何状态）；只在候选命中时才调 `heightAt`，因此每区块额外成本仅 400 次整数 hash（实测 padded 生成含树 0.17 ms）。`stamp()` 扫描缓冲外扩 2 格的树心，使得跨区块树冠在 16×16 与 18×18 两种缓冲下都完整，与加载顺序无关。叶子只填 AIR，树干最后写入覆盖叶子。
 - [2026-11-22 / P11-a] 验证：13×13 区块 142 棵树（干高 4/5/6 = 55/40/47），最小间距 3，全部站在海滩线以上的草地、顶部 2 层叶冠、上方留空；31 棵跨 x 边界的树远侧树冠全部存在；单独生成/世界生成/padded 内核三者逐字节一致；同种子二次生成 169 块一致、不同种子布局不同；Worker vs 主线程网格一致（2478 面）。出生点若落在树干内自动上爬到空列。
+- [2026-11-22 / P11-b] 水为 `BlockId.WATER=11`：`isSolid=false`（物理/射线穿过）、`isOpaque=false`（相邻不透明面照常输出，所以透过水能看到海床）。剔除规则拆为两套：不透明面对 `!isOpaque` 邻居输出；水面**只对 AIR** 输出（水-水、水-固体都不出面），顶面下沉 0.125，不做 AO（避免海面出现网格状暗角）。
+- [2026-11-22 / P11-b] 渲染：每区块第二个 Mesh 用 `MeshBasicMaterial{transparent, opacity .62, depthWrite:false, DoubleSide}`、`renderOrder=1`，DrawCalls 上限 2×区块数（实测 13×13：169+104）。Worker 协议 `BuildResult.water` 增加 5 个 Transferable（共 11 个）。
+- [2026-11-22 / P11-b] 游泳：腰部 (feet+0.9) 处于水中时水平速度 ×0.55、重力 8、下沉封顶 2.5 m/s、Space 以 4 m/s 上浮（可爬上 1 格海岸）。验证：最深处 (深 8) 1 s 后 vy=−2.5、5 s 后稳稳站在海床、按 Space 1 s 上浮 4 格；射线穿过 3 格水命中海床。
+- [2026-11-22 / P11-b] 验证中注意：主线程 mesher 在**生成区域边缘**会把未加载邻块视为 AIR，因此与 padded Worker 输出比较必须用内部区块（48/48 一致）；边缘区块差异是预期行为（见风险项）。
