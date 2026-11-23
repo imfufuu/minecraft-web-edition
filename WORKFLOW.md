@@ -17,10 +17,10 @@ P11 — 可选进阶特性（树木 → 水面 → 昼夜）
 | P8 | 顶点光照与环境光遮蔽(AO) | done | yes | 无灯光 MeshBasicMaterial；AO 值手算全对（1.0/.82/.65/.45）；镜像对称；24 三角形 CCW | F4 AO / F6 明暗 开关 |
 | P9 | IndexedDB 增量存档与恢复 | done | yes | 放置/破坏→flush→重新 bootstrap：方块/位置/热栏/模式全部恢复；save 1.3 ms；clearAll 后为新世界 | 存档仅含 diff，不存整区块 |
 | P10 | Web Worker 多线程与视距卸载 | done | yes | rd=7 → 177 区块；Worker 内生成+网格 ≈5.5 ms/块；主线程 ≤2 上传/帧；远离后 69/69 网格全部 dispose；Worker 输出与主线程逐字节一致 | Worker 包 7.9 kB，不含 three |
-| P11 | 可选进阶特性 | in-progress | no | 树木 ✓：13×13 区块 142 棵，间距 ≥3，跨区块无缝，0.17 ms/块；水面 ✓：28,208 水块/9,967 列精确填充 (h, 20]，每水柱恰 1 个顶面且无水-水面，169 块 → 169+104 网格，48 内部水区块 Worker 输出逐字节一致 | 顺序：树木 ✓ → 水面 ✓ → 昼夜 |
+| P11 | 可选进阶特性 | in-progress | no | 树木 ✓：13×13 区块 142 棵，间距 ≥3，跨区块无缝，0.17 ms/块；水面 ✓：28,208 水块/9,967 列精确填充 (h, 20]，每水柱恰 1 个顶面且无水-水面，169 块 → 169+104 网格，48 内部水区块 Worker 输出逐字节一致；昼夜 ✓：1 个 uniform、0 次网格重建、DrawCalls 不变、夜间下限 0.25、600 s/天 | 顺序：树木 ✓ → 水面 ✓ → 昼夜 ✓ → Greedy(可选) |
 
 ## 当前任务
-P11-c 昼夜循环：`core/DayNight.ts` 以 `elapsed` 驱动 0–1 的时间相位（默认 10 分钟一昼夜，`?day=` 固定），输出天空色 / 雾色 / 全局光照乘数；不重建网格——区块材质改为 `ShaderMaterial`（或 `onBeforeCompile` 注入 `uniform float uDaylight`）把顶点色乘以 uDaylight，水面材质同样；F3 显示时间与 daylight；ESC 菜单可暂停时间推进。验收：DrawCalls 不变、无逐帧 CPU 重建、夜间最低亮度 ≥0.25（可见）。
+P11-d Greedy Meshing（可选）：在 `ChunkMesher` 中按面方向逐层扫描，把 tile、面着色与**四角 AO 全部相同**且 flip 状态一致的相邻面合并为矩形；UV 用 `RepeatWrapping` 不可行（图集），改为 UV 以格数计并在片元中 `fract()`——需要 `onBeforeCompile` 增加 tile 原点/尺寸属性；水面单独合并。验收：面数相对 P4 基线下降 ≥40%，AO/贴图视觉与非 greedy 逐像素一致（F7 开关对比），Worker 输出仍与主线程一致。若评估收益不足（当前 177 块 ≈ 20 万面已在预算内），允许记录决策后跳过并进入收尾。
 
 ## 阻塞项与风险
 无。
@@ -30,7 +30,7 @@ P11-c 昼夜循环：`core/DayNight.ts` 以 `elapsed` 驱动 0–1 的时间相�
 风险备注：Worker 路径与主线程 `rebuildDirty` 路径在**视距边缘**可能不一致：主线程重建（玩家编辑后）对未加载邻区块按 AIR 处理，而 Worker 用 padded 生成数据。只影响被编辑且位于加载边缘的区块，玩家靠近后邻区块加载即恢复。
 
 ## 下一步计划（当前任务完成后）
-P11-d Greedy Meshing（可选，需与 AO 兼容：仅合并四角 AO 与 tile 相同的面；水面单独合并）；P11-e 音效/粒子（可选）。全部可选项完成后进入收尾：README、性能基线表、已知问题清单。
+收尾：README（操作说明、URL 参数 `?seed= ?rd= ?day=`、架构图）、性能基线表（各阶段指标汇总）、已知问题清单（iframe 指针锁定、视距边缘重建差异、无移动端跳跃键等）。
 
 ## 架构快照（当前目录树）
 ```text
@@ -65,6 +65,7 @@ src/
 ├── core/
 │   ├── Renderer.ts         # WebGLRenderer + PerspectiveCamera + Scene 封装，resize 处理，info.autoReset=false
 │   ├── Loop.ts             # rAF 主循环，dt = min(clock.getDelta(), MAX_DELTA=0.1)
+│   ├── DayNight.ts         # 相位 0=日出/.25=正午/.75=午夜；daylight = .25 + .75·smoothstep(sunHeight)；天空/雾色曲线；attach() 注入 uDaylight
 │   ├── SaveManager.ts      # 5 s 周期 + 1.5 s 编辑防抖自动保存；visibilitychange/pagehide flush；并发合并
 │   ├── InputManager.ts     # 按键/鼠标键 Set、mouse delta、滚轮；CaptureMode none/locked/fallback；fallback 用 Pointer Events 差分（鼠标/触屏），轻点=点击、长按=右键
 │   └── FirstPersonCamera.ts# YXZ 欧拉、pitch 钳制、setEyePosition（位移由 Player 决定）
@@ -130,3 +131,6 @@ src/
 - [2026-11-22 / P11-b] 渲染：每区块第二个 Mesh 用 `MeshBasicMaterial{transparent, opacity .62, depthWrite:false, DoubleSide}`、`renderOrder=1`，DrawCalls 上限 2×区块数（实测 13×13：169+104）。Worker 协议 `BuildResult.water` 增加 5 个 Transferable（共 11 个）。
 - [2026-11-22 / P11-b] 游泳：腰部 (feet+0.9) 处于水中时水平速度 ×0.55、重力 8、下沉封顶 2.5 m/s、Space 以 4 m/s 上浮（可爬上 1 格海岸）。验证：最深处 (深 8) 1 s 后 vy=−2.5、5 s 后稳稳站在海床、按 Space 1 s 上浮 4 格；射线穿过 3 格水命中海床。
 - [2026-11-22 / P11-b] 验证中注意：主线程 mesher 在**生成区域边缘**会把未加载邻块视为 AIR，因此与 padded Worker 输出比较必须用内部区块（48/48 一致）；边缘区块差异是预期行为（见风险项）。
+- [2026-11-22 / P11-c] 昼夜用 **单个共享 uniform** 实现：`DayNight.attach(material)` 通过 `onBeforeCompile` 在 `<common>` 后声明 `uniform float uDaylight`，在 `<color_fragment>`（贴图 × 顶点色之后）乘以它；`shader.uniforms.uDaylight` 直接引用 `DayNight.daylightUniform` 对象，所以每帧只改一个 number，不重建网格、不改 DrawCalls。`customProgramCacheKey='mwe-daylight'` 防止与原生 basic 程序缓存混淆。
+- [2026-11-22 / P11-c] 亮度曲线：`daylight = 0.25 + 0.75·smoothstep(−0.15, 0.2, sin 2πφ)`——黄昏过渡约 1/12 天，夜间保底 0.25 保证可见；天空色 夜 #0a0f22 → 暮 #e8905a → 昼 #87ceeb，雾色与天空同步。默认 600 s 一天，起始 φ=0.12（约 09:00）；`?day=0.75` 或 `?day=HH:MM` 固定时间；菜单打开（input 非 active）时钟暂停。
+- [2026-11-22 / P11-c] 验证 18/18：正午 1.0 / 午夜 0.25、午夜→正午单调、全程范围 [0.25,1]、时钟字符串、600 s 回绕、暂停/固定不推进、`?day=` 解析；对 three `ShaderLib.basic` 真实源码做注入：两个锚点都命中、声明先于使用、乘法位于 map/color 之后、uniform 对象同引用且随时钟变化。注意构造函数对 [0,1) 内相位不做取模（`((0.1%1)+1)%1` 会产生浮点漂移）。
