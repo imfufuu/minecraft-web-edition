@@ -17,10 +17,10 @@ P11 — 可选进阶特性（树木 → 水面 → 昼夜）
 | P8 | 顶点光照与环境光遮蔽(AO) | done | yes | 无灯光 MeshBasicMaterial；AO 值手算全对（1.0/.82/.65/.45）；镜像对称；24 三角形 CCW | F4 AO / F6 明暗 开关 |
 | P9 | IndexedDB 增量存档与恢复 | done | yes | 放置/破坏→flush→重新 bootstrap：方块/位置/热栏/模式全部恢复；save 1.3 ms；clearAll 后为新世界 | 存档仅含 diff，不存整区块 |
 | P10 | Web Worker 多线程与视距卸载 | done | yes | rd=7 → 177 区块；Worker 内生成+网格 ≈5.5 ms/块；主线程 ≤2 上传/帧；远离后 69/69 网格全部 dispose；Worker 输出与主线程逐字节一致 | Worker 包 7.9 kB，不含 three |
-| P11 | 可选进阶特性 | in-progress | no | 树木 ✓：13×13 区块 142 棵，间距 ≥3，跨区块无缝，0.17 ms/块；水面 ✓：28,208 水块/9,967 列精确填充 (h, 20]，每水柱恰 1 个顶面且无水-水面，169 块 → 169+104 网格，48 内部水区块 Worker 输出逐字节一致；昼夜 ✓：1 个 uniform、0 次网格重建、DrawCalls 不变、夜间下限 0.25、600 s/天 | 顺序：树木 ✓ → 水面 ✓ → 昼夜 ✓ → Greedy(可选) |
+| P11 | 可选进阶特性 | in-progress | no | 树木 ✓：13×13 区块 142 棵，间距 ≥3，跨区块无缝，0.17 ms/块；水面 ✓：28,208 水块/9,967 列精确填充 (h, 20]，每水柱恰 1 个顶面且无水-水面，169 块 → 169+104 网格，48 内部水区块 Worker 输出逐字节一致；昼夜 ✓：1 个 uniform、0 次网格重建；天体/云 ✓：+5 DrawCalls（日/晕/月/星/云），云 37×37 格 1396 面；触控 ✓：全局防选中/防缩放 + 全屏；群系 ✓：8 种，1 km² 全部出现，含树/仙人掌生成 0.34 ms/块 | 树木 ✓ 水面 ✓ 昼夜 ✓ 天体云 ✓ 触控 ✓ 群系 ✓ → 收尾 |
 
 ## 当前任务
-P11-d Greedy Meshing（可选）：在 `ChunkMesher` 中按面方向逐层扫描，把 tile、面着色与**四角 AO 全部相同**且 flip 状态一致的相邻面合并为矩形；UV 用 `RepeatWrapping` 不可行（图集），改为 UV 以格数计并在片元中 `fract()`——需要 `onBeforeCompile` 增加 tile 原点/尺寸属性；水面单独合并。验收：面数相对 P4 基线下降 ≥40%，AO/贴图视觉与非 greedy 逐像素一致（F7 开关对比），Worker 输出仍与主线程一致。若评估收益不足（当前 177 块 ≈ 20 万面已在预算内），允许记录决策后跳过并进入收尾。
+收尾：README（操作说明、URL 参数 `?seed= ?rd= ?day=`、群系一览、架构图）、性能基线表（各阶段指标汇总）、已知问题清单（iframe 指针锁定、视距边缘重建差异、iPhone 无全屏 API、旧存档在群系改版后地形变化）。Greedy Meshing 评估：当前 rd=7 约 20 万面 / 177 区块仍在预算内（移动端 60 fps），**决定跳过**（已记录）。
 
 ## 阻塞项与风险
 无。
@@ -30,7 +30,7 @@ P11-d Greedy Meshing（可选）：在 `ChunkMesher` 中按面方向逐层扫描
 风险备注：Worker 路径与主线程 `rebuildDirty` 路径在**视距边缘**可能不一致：主线程重建（玩家编辑后）对未加载邻区块按 AIR 处理，而 Worker 用 padded 生成数据。只影响被编辑且位于加载边缘的区块，玩家靠近后邻区块加载即恢复。
 
 ## 下一步计划（当前任务完成后）
-收尾：README（操作说明、URL 参数 `?seed= ?rd= ?day=`、架构图）、性能基线表（各阶段指标汇总）、已知问题清单（iframe 指针锁定、视距边缘重建差异、无移动端跳跃键等）。
+项目完成态维护：按用户反馈迭代（候选：雪地结冰水面、群系草色顶点着色、音效、移动端跳跃键布局）。
 
 ## 架构快照（当前目录树）
 ```text
@@ -43,7 +43,21 @@ src/
 ├── utils/
 │   └── raycast.ts          # raycastVoxels（Amanatides–Woo DDA，返回整数坐标+法线+命中点）、getTargetAndPlaceBlockCoords（7.3 参考公式）
 ├── blocks/
-│   ├── BlockTypes.ts       # BlockId (as const，11 种含 AIR) + isSolid
+│   ├── BlockTypes.ts       # BlockId (as const，14 种含 AIR/WATER/SNOW/CACTUS) + isSolid / isOpaque / isLiquid
+│   └── BlockRegistry.ts    # BlockDef{top,side,bottom tile, breakable}，getFaceTile(id, face)，HOTBAR_BLOCKS
+├── world/
+│   ├── Chunk.ts            # CHUNK_SIZE=16 / CHUNK_HEIGHT=64，Uint8Array(16384)，chunkIndex，越界读返回 AIR，dirty 标记
+│   ├── Biomes.ts           # 8 群系定义（表面/填充/树与仙人掌概率）、山地石线 38/雪线 48、surfaceBlockFor、ColumnInfo
+│   ├── TerrainGenerator.ts # 种子 -> 高度/温度/湿度/崎岖 4 路 Simplex；columnAt(h, biome)；fillColumn 通用于 16/18 布局；海平面 20 填水
+│   ├── Structures.ts       # TreePlacer：hash 候选 + 群系概率 + 间距规则；stamp() 外扩 2 格；仙人掌 1–3 高
+│   ├── PaddedChunk.ts      # 18×H×18 padded 生成、extractInner、applyDiffToPadded、PaddedBlockSource(BlockSource)
+│   ├── ChunkLoader.ts      # 螺旋队列 (rd=7, 177 块)；Worker 池 (min(4, cores-1))；≤2 上传/帧；> rd+2 卸载+dispose；无 Worker 时同步回退
+│   ├── World.ts            # Map<"cx,cz", Chunk>，getOrCreateChunk(叠加 diff)，getBlock/setBlock(记录 modifiedBlocks, editVersion)，applyDiff；边界修改连带标记邻区块 dirty
+│   └── WorldStorage.ts     # IndexedDB MinecraftWebDB v1：meta(seed, player) + chunk_diffs(Uint16 index / Uint8 id)；无 IDB 时 no-op
+├── utils/
+│   └── raycast.ts          # raycastVoxels（Amanatides–Woo DDA，返回整数坐标+法线+命中点）、getTargetAndPlaceBlockCoords（7.3 参考公式）
+├── blocks/
+│   ├── BlockTypes.ts       # BlockId (as const，14 种含 AIR/WATER/SNOW/CACTUS) + isSolid / isOpaque / isLiquid
 │   └── BlockRegistry.ts    # BlockDef{top,side,bottom tile, breakable}，getFaceTile(id, face)，HOTBAR_BLOCKS
 ├── world/
 │   ├── Chunk.ts            # CHUNK_SIZE=16 / CHUNK_HEIGHT=64，Uint8Array(16384)，chunkIndex，越界读返回 AIR，dirty 标记
@@ -56,7 +70,7 @@ src/
 │   └── math.ts             # floorMod、worldToChunkCoords、chunkToWorld、clamp/lerp/smoothstep
 ├── mesh/
 │   ├── FaceData.ts         # 6 面：dir / normal / 4 corners，FACE_INDICES=[0,1,2,2,1,3]（CCW 朝外）
-│   ├── TileIds.ts          # 图集 tile 索引（12 个）
+│   ├── TileIds.ts          # 图集 tile 索引（16 个）
 │   ├── TextureAtlas.ts     # paintAtlas(seed) 纯 TS 像素绘制 → RGBA；DataTexture(Nearest, sRGB)；getTileUV(内缩 0.001)；canvas 副本供缩略图
 │   ├── AtlasLayout.ts      # 图集常量 + getTileUV（无 three 依赖，供 Worker 使用）
 │   ├── Lighting.ts         # FACE_SHADE、AO_CURVE、vertexAO(side1,side2,corner)、QUAD_INDICES(_FLIPPED)、shouldFlipQuad
@@ -65,6 +79,8 @@ src/
 ├── core/
 │   ├── Renderer.ts         # WebGLRenderer + PerspectiveCamera + Scene 封装，resize 处理，info.autoReset=false
 │   ├── Loop.ts             # rAF 主循环，dt = min(clock.getDelta(), MAX_DELTA=0.1)
+│   ├── Sky.ts              # 日/日晕/月/星 (700 点, 种子确定) 跟随相机的组，按相位绕 Z 旋转；无雾、不写深度；4 DrawCalls
+│   ├── Clouds.ts           # 12 格盒状云层 y=84，simplex 掩码，邻格共享面剔除，0.6 格/s 东漂，2 格重建并 dispose；1 DrawCall
 │   ├── DayNight.ts         # 相位 0=日出/.25=正午/.75=午夜；daylight = .25 + .75·smoothstep(sunHeight)；天空/雾色曲线；attach() 注入 uDaylight
 │   ├── SaveManager.ts      # 5 s 周期 + 1.5 s 编辑防抖自动保存；visibilitychange/pagehide flush；并发合并
 │   ├── InputManager.ts     # 按键/鼠标键 Set、mouse delta、滚轮；CaptureMode none/locked/fallback；fallback 用 Pointer Events 差分（鼠标/触屏），轻点=点击、长按=右键
@@ -74,6 +90,7 @@ src/
     ├── DebugOverlay.ts     # F3 调试面板：FPS / Frame ms / Draw Calls / Triangles / Geometries / Pos / Chunk / Yaw / Pitch
     ├── PauseOverlay.ts     # 菜单层 + setStatus 状态提示 + setDiagnostics 诊断行（构建号等）
     ├── ErrorBar.ts         # window error / unhandledrejection → 屏幕顶部红色错误条
+    ├── TouchGuards.ts      # installTouchGuards（contextmenu/selectstart/gesture*/touchmove/双击缩放）+ Fullscreen 兼容封装
     ├── TouchControls.ts    # 虚拟摇杆（setMoveAxis）、▲跳/上、▼下、飞行按钮；右上常驻 F3 / ☰ 按钮
     ├── Hotbar.ts           # 9 格快捷栏：Digit1-9（onKeyPress）、滚轮（consumeWheel）、触屏点选；缩略图来自图集
     └── styles.css          # 全屏布局、调试面板、暂停层样式
@@ -134,3 +151,9 @@ src/
 - [2026-11-22 / P11-c] 昼夜用 **单个共享 uniform** 实现：`DayNight.attach(material)` 通过 `onBeforeCompile` 在 `<common>` 后声明 `uniform float uDaylight`，在 `<color_fragment>`（贴图 × 顶点色之后）乘以它；`shader.uniforms.uDaylight` 直接引用 `DayNight.daylightUniform` 对象，所以每帧只改一个 number，不重建网格、不改 DrawCalls。`customProgramCacheKey='mwe-daylight'` 防止与原生 basic 程序缓存混淆。
 - [2026-11-22 / P11-c] 亮度曲线：`daylight = 0.25 + 0.75·smoothstep(−0.15, 0.2, sin 2πφ)`——黄昏过渡约 1/12 天，夜间保底 0.25 保证可见；天空色 夜 #0a0f22 → 暮 #e8905a → 昼 #87ceeb，雾色与天空同步。默认 600 s 一天，起始 φ=0.12（约 09:00）；`?day=0.75` 或 `?day=HH:MM` 固定时间；菜单打开（input 非 active）时钟暂停。
 - [2026-11-22 / P11-c] 验证 18/18：正午 1.0 / 午夜 0.25、午夜→正午单调、全程范围 [0.25,1]、时钟字符串、600 s 回绕、暂停/固定不推进、`?day=` 解析；对 three `ShaderLib.basic` 真实源码做注入：两个锚点都命中、声明先于使用、乘法位于 map/color 之后、uniform 对象同引用且随时钟变化。注意构造函数对 [0,1) 内相位不做取模（`((0.1%1)+1)%1` 会产生浮点漂移）。
+- [2026-11-23 / P11-e] 天体放在**跟随相机的 Group** 内、半径 420（远小于 far=1000，远大于加载地形），按相位绕 Z 轴旋转（东升 +X、正午 +Y、西落 −X，路径向南倾 0.28 rad 避免过天顶），月亮恒在太阳对侧，星空同轴旋转；材质 `fog:false, depthWrite:false`，地形天然覆盖。横跨地平线时日月各 0.5 透明度交叉淡出，星星在 sunHeight<0.05 后 0.3 内淡入。
+- [2026-11-23 / P11-e] "体积云"采用 MC fancy 云方案：12 格 × 4 厚盒体，simplex fbm 掩码阈值 0.12（覆盖约 36%），邻格共享侧面剔除（37×37 格 496 云 → 1396 面而非 2976）。云场随时间东漂 0.6 格/s，网格坐标相对中心格，只在玩家相对云场移动 ≥2 格时重建（旧几何体 dispose），因此每帧 CPU 成本为 0；雾 (60–160) 自然隐藏云层边缘；颜色随 daylight 变暗（夜间 0.44）。
+- [2026-11-23 / P11-f] 触控防误操作：`html/body` `user-select:none; -webkit-touch-callout:none; touch-action:none; overscroll-behavior:none`，viewport `user-scalable=no, viewport-fit=cover`；JS 兜底拦截 contextmenu/selectstart/dragstart/gesture*/非被动 touchmove/双击 (320 ms)/dblclick，表单控件例外。全屏：菜单按钮 + 触控 HUD 右上 ⛶（仅在支持 Fullscreen API 时渲染；iPhone Safari 无此 API 则不显示），进入后尽力 `orientation.lock('landscape')`。
+- [2026-11-23 / P11-g] 群系 = 三路慢噪声（温度/湿度 1/300，崎岖度 1/220）+ 高度：Ocean(h<19) / Beach(≤21) / Mountains(崎岖>0.5) / Snowy(T<.32) / Desert(T>.66,H<.42) / Savanna(T>.66) / Forest(H>.58) / Plains。山地把基高 +10、振幅 +22（上限 60），≥38 裸石、≥48 积雪。新方块 SNOW(12)、CACTUS(13)，新 tile 3 个（共 16）。树概率按群系（Forest 1/55 … Savanna 1/700，沙漠/海滩/海洋 0），`isCandidate` 先用全局最大概率 1/55 预筛再查群系，避免每列都算气候噪声；仙人掌 1/90（1–3 高）同样先 hash 预筛。默认种子 1 km² 普查：Ocean 13% / Beach 17% / Plains 26% / Forest 12% / Desert 4% / Savanna 7% / Snowy 9% / Mountains 12%；1089 区块表面规则 0 违例；Worker 与主线程仍逐字节一致；含全部结构 0.34 ms/块。
+- [2026-11-23 / P11-g] 兼容性说明：地形算法改版后，旧存档的 diff 仍按 (区块, 索引) 叠加，但其下的地形已不同（可能悬空/埋没）；因项目尚无发布版本，不做世代迁移，记录为已知问题。
+- [2026-11-23 / P11-d] Greedy Meshing **跳过**：rd=7 时总面数约 20 万、单区块上传 ≈0.3 ms，桌面与 iPad 均稳定 60 fps；而 greedy 与逐顶点 AO/图集 UV 的兼容实现（需 fract UV + 额外属性）复杂度高、收益主要在面数而非瓶颈所在（上传/生成已在 Worker）。

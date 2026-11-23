@@ -1,10 +1,11 @@
 import { BlockId } from '../blocks/BlockTypes';
 import { hash2D } from '../utils/prng';
 import { CHUNK_HEIGHT } from './Chunk';
-import { SEA_LEVEL, type TerrainGenerator } from './TerrainGenerator';
+import type { TerrainGenerator } from './TerrainGenerator';
+import { Biome, MAX_TREE_CHANCE, surfaceBlockFor } from './Biomes';
 
-/** Probability that a grass column is a tree *candidate* (before the spacing rule). */
-export const TREE_CHANCE = 1 / 180;
+/** Cactus: 1–3 blocks tall on desert sand (no canopy, so no spacing rule needed). */
+const CACTUS_MAX_HEIGHT = 3;
 /** Minimum Chebyshev distance between two tree trunks. */
 export const TREE_SPACING = 2;
 /** Horizontal canopy radius — also the margin a buffer must look outside itself for foreign canopies. */
@@ -16,6 +17,7 @@ const TREE_MAX_HEIGHT = TRUNK_MIN + TRUNK_EXTRA - 1 + 2;
 
 const SALT_PLACE = 0x7a3e51 | 0;
 const SALT_TRUNK = 0x5a1700;
+const SALT_CACTUS = 0x3cac70;
 
 export interface Tree {
   wx: number;
@@ -26,10 +28,10 @@ export interface Tree {
 }
 
 /**
- * Deterministic tree placement: a column is a tree iff it is a candidate (hash below
- * TREE_CHANCE), sits on grass above the beach line, has head-room, and no other candidate
- * within TREE_SPACING has a smaller hash. Every input is a pure function of (seed, wx, wz),
- * so chunk generation order and chunk borders cannot change the result.
+ * Deterministic tree placement: a column is a tree iff it is a candidate (hash below its
+ * biome's treeChance), stands on grass/snow, has head-room, and no other candidate within
+ * TREE_SPACING has a smaller hash. Every input is a pure function of (seed, wx, wz), so
+ * chunk generation order and chunk borders cannot change the result.
  */
 export class TreePlacer {
   private readonly generator: TerrainGenerator;
@@ -44,19 +46,27 @@ export class TreePlacer {
     return hash2D(this.seed ^ SALT_PLACE, wx, wz);
   }
 
+  /** Is this column a tree candidate (hash below its biome's chance, on a plantable surface)? */
+  private isCandidate(wx: number, wz: number, h: number): boolean {
+    if (h >= MAX_TREE_CHANCE) return false;
+    const col = this.generator.columnAt(wx, wz);
+    if (h >= col.biome.treeChance) return false;
+    const top = surfaceBlockFor(col);
+    return top === BlockId.GRASS || top === BlockId.SNOW;
+  }
+
   /** Tree at this column, or null. */
   treeAt(wx: number, wz: number): Tree | null {
     const h0 = this.candidateHash(wx, wz);
-    if (h0 >= TREE_CHANCE) return null;
+    if (!this.isCandidate(wx, wz, h0)) return null;
     for (let dz = -TREE_SPACING; dz <= TREE_SPACING; dz++) {
       for (let dx = -TREE_SPACING; dx <= TREE_SPACING; dx++) {
         if (dx === 0 && dz === 0) continue;
         const hn = this.candidateHash(wx + dx, wz + dz);
-        if (hn < h0) return null; // a stronger candidate nearby wins
+        if (hn < h0 && this.isCandidate(wx + dx, wz + dz, hn)) return null; // a stronger candidate nearby wins
       }
     }
     const baseY = this.generator.heightAt(wx, wz);
-    if (baseY <= SEA_LEVEL + 1) return null; // beaches (sand) stay bare
     if (baseY + TREE_MAX_HEIGHT >= CHUNK_HEIGHT) return null;
     const trunkHeight = TRUNK_MIN + Math.floor(hash2D(this.seed ^ SALT_TRUNK, wx, wz) * TRUNK_EXTRA);
     return { wx, wz, baseY, trunkHeight };
@@ -73,6 +83,8 @@ export class TreePlacer {
     let count = 0;
     for (let wz = originZ - TREE_RADIUS; wz < originZ + sizeZ + TREE_RADIUS; wz++) {
       for (let wx = originX - TREE_RADIUS; wx < originX + sizeX + TREE_RADIUS; wx++) {
+        const inside = wx >= originX && wx < originX + sizeX && wz >= originZ && wz < originZ + sizeZ;
+        if (inside) this.stampCactus(data, wx, wz, originX, originZ, sizeX, layer);
         const tree = this.treeAt(wx, wz);
         if (!tree) continue;
         count++;
@@ -102,5 +114,23 @@ export class TreePlacer {
       }
     }
     return count;
+  }
+
+  /** Cactus at a desert column: 1–3 CACTUS blocks straight up from the sand. */
+  cactusHeightAt(wx: number, wz: number): number {
+    const r = hash2D(this.seed ^ SALT_CACTUS, wx, wz);
+    const col = this.generator.columnAt(wx, wz);
+    if (col.biome.id !== Biome.DESERT || r >= col.biome.cactusChance) return 0;
+    return 1 + Math.floor((r / col.biome.cactusChance) * CACTUS_MAX_HEIGHT);
+  }
+
+  private stampCactus(data: Uint8Array, wx: number, wz: number, originX: number, originZ: number, sizeX: number, layer: number): void {
+    // Cheap reject first: the hash alone rules out > 98% of columns before any noise is evaluated.
+    if (hash2D(this.seed ^ SALT_CACTUS, wx, wz) >= 1 / 60) return;
+    const n = this.cactusHeightAt(wx, wz);
+    if (n === 0) return;
+    const baseY = this.generator.heightAt(wx, wz);
+    const i0 = wx - originX + (wz - originZ) * sizeX;
+    for (let y = baseY + 1; y <= baseY + n && y < CHUNK_HEIGHT; y++) data[i0 + y * layer] = BlockId.CACTUS;
   }
 }
