@@ -53,10 +53,6 @@ export function bootstrap(): GameHandle {
   // --- Sky, fog, light ---
   scene.background = new THREE.Color(SKY_COLOR);
   scene.fog = new THREE.Fog(SKY_COLOR, 60, 160);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-  sun.position.set(0.5, 1, 0.3);
-  scene.add(sun);
 
   // --- World: seeded terrain, 5×5 chunks ---
   const seed = resolveSeed();
@@ -67,7 +63,8 @@ export function bootstrap(): GameHandle {
 
   // --- One merged mesh per chunk (cross-chunk culling + frustum culling) ---
   const atlas = new TextureAtlas();
-  const chunkMaterial = new THREE.MeshLambertMaterial({ map: atlas.texture, vertexColors: true });
+  // Lighting is fully baked into vertex colours (directional shade × AO): unlit material, zero per-frame GPU lighting cost.
+  const chunkMaterial = new THREE.MeshBasicMaterial({ map: atlas.texture, vertexColors: true });
   const meshes = new ChunkMeshManager(scene, world, chunkMaterial);
   const t1 = performance.now();
   meshes.rebuildAll();
@@ -133,6 +130,16 @@ export function bootstrap(): GameHandle {
       : 'Target: none';
   });
   debug.addLine(() => `Hand: ${interaction.selectedBlock} (${hotbar.selectedIndex + 1})  Textures: ${gfx.info.memory.textures}`);
+  debug.addLine(() => `AO: ${meshes.mesher.options.ao ? 'on' : 'off'} [F4]  Shading: ${meshes.mesher.options.shading ? 'on' : 'off'} [F6]`);
+  input.onKeyPress((code) => {
+    if (code === 'F4') {
+      meshes.mesher.options.ao = !meshes.mesher.options.ao;
+      meshes.rebuildAll();
+    } else if (code === 'F6') {
+      meshes.mesher.options.shading = !meshes.mesher.options.shading;
+      meshes.rebuildAll();
+    }
+  });
   debug.addLine(() => {
     const p = player.position;
     const v = player.velocity;
