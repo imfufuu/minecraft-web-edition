@@ -96,7 +96,16 @@ export async function bootstrap(): Promise<GameHandle> {
   const atlas = new TextureAtlas();
   // Lighting is fully baked into vertex colours (directional shade × AO): unlit material, zero per-frame GPU lighting cost.
   const chunkMaterial = new THREE.MeshBasicMaterial({ map: atlas.texture, vertexColors: true });
-  const meshes = new ChunkMeshManager(scene, world, chunkMaterial);
+  // Water: same atlas, translucent, no depth write (so overlapping sheets don't z-fight), visible from below too.
+  const waterMaterial = new THREE.MeshBasicMaterial({
+    map: atlas.texture,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.62,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const meshes = new ChunkMeshManager(scene, world, chunkMaterial, waterMaterial);
   // Streaming loader: spiral queue around the player, worker pool, ≤2 uploads/frame, unload beyond rd+2.
   const loader = new ChunkLoader(world, meshes, seed, meshes.mesher.options, renderDistance);
 
@@ -202,7 +211,7 @@ export async function bootstrap(): Promise<GameHandle> {
   });
   input.onModeChanged((mode) => touchControls.setVisible(mode !== 'none' && input.touchControlsEnabled));
   debug.addLine(() => `Yaw: ${THREE.MathUtils.radToDeg(fps.yaw).toFixed(1)}°  Pitch: ${THREE.MathUtils.radToDeg(fps.pitch).toFixed(1)}°  Input: ${input.captureMode}`);
-  debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Meshes: ${meshes.meshes.size}  Faces: ${meshes.totalFaces}`);
+  debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Meshes: ${meshes.meshes.size}+${meshes.waterMeshes.size} water  Faces: ${meshes.totalFaces}+${meshes.totalWaterFaces}`);
   debug.addLine(() => {
     const st = loader.stats;
     return `Loader: ${st.mode}×${st.workers}  rd=${loader.renderDistance}  queued: ${st.queued}  inFlight: ${st.inFlight}  ready: ${st.ready}  uploads/frame: ${st.uploadedThisFrame}`;
@@ -238,7 +247,7 @@ export async function bootstrap(): Promise<GameHandle> {
   debug.addLine(() => {
     const p = player.position;
     const v = player.velocity;
-    return `Mode: ${player.mode} [F]  onGround: ${player.onGround}  Vel: ${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}  Feet: ${p.y.toFixed(4)}`;
+    return `Mode: ${player.mode} [F]  onGround: ${player.onGround}${player.inWater ? '  inWater' : ''}  Vel: ${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}  Feet: ${p.y.toFixed(4)}`;
   });
 
   // --- Main loop ---

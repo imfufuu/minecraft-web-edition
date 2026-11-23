@@ -29,6 +29,7 @@ export const BLOCK_REGISTRY: readonly BlockDef[] = [
   def(BlockId.PLANKS, 'Oak Planks', Tile.PLANKS),
   def(BlockId.BRICK, 'Bricks', Tile.BRICK),
   def(BlockId.COBBLESTONE, 'Cobblestone', Tile.COBBLESTONE),
+  def(BlockId.WATER, 'Water', Tile.WATER, Tile.WATER, Tile.WATER, false),
 ];
 
 export function getBlockDef(id: number): BlockDef {

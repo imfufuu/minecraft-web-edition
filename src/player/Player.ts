@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { InputManager } from '../core/InputManager';
+import { isLiquid } from '../blocks/BlockTypes';
 import type { BlockSource } from '../mesh/ChunkMesher';
 import { type AABB, sweepAxis } from './PhysicsAABB';
 
@@ -16,6 +17,11 @@ const FLY_SPEED = 10;
 const FLY_VERTICAL_SPEED = 8;
 const FLY_SPRINT_MULTIPLIER = 2.5;
 const VOID_Y = -30;
+/** Swimming: slower walk, capped sink speed, Space swims upward. */
+const WATER_SPEED_MULTIPLIER = 0.55;
+const WATER_SINK_SPEED = 2.5;
+const WATER_SWIM_UP_SPEED = 4;
+const WATER_GRAVITY = 8;
 /** Largest per-axis step we allow in one substep so snapping stays exact (< 1 block). */
 const MAX_STEP = 0.5;
 
@@ -33,6 +39,8 @@ export class Player {
   readonly velocity = new THREE.Vector3();
   readonly spawn = new THREE.Vector3();
   onGround = false;
+  /** True while the player's lower body is inside water. */
+  inWater = false;
   mode: MovementMode = 'survival';
 
   private readonly input: InputManager;
@@ -137,18 +145,27 @@ export class Player {
 
   private updateSurvival(dt: number): void {
     // Horizontal velocity is set directly (no inertia) for crisp Minecraft-like control.
-    const speed = WALK_SPEED * (this.isSprinting() ? SPRINT_MULTIPLIER : 1);
+    // Water test at waist height (feet + 0.9): entering water from above switches to swimming.
+    const p = this.position;
+    this.inWater = isLiquid(this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.9), Math.floor(p.z)));
+
+    const speed = WALK_SPEED * (this.isSprinting() ? SPRINT_MULTIPLIER : 1) * (this.inWater ? WATER_SPEED_MULTIPLIER : 1);
     this.velocity.x = this.wish.x * speed;
     this.velocity.z = this.wish.z * speed;
 
-    if (this.onGround && this.input.isDown('Space')) {
-      this.velocity.y = JUMP_VELOCITY;
-      this.onGround = false;
+    if (this.inWater) {
+      // Buoyancy model: weak gravity, capped sink speed, Space paddles upward (lets you climb out onto a 1-block shore).
+      if (this.input.isDown('Space')) this.velocity.y = WATER_SWIM_UP_SPEED;
+      else this.velocity.y = Math.max(this.velocity.y - WATER_GRAVITY * dt, -WATER_SINK_SPEED);
+    } else {
+      if (this.onGround && this.input.isDown('Space')) {
+        this.velocity.y = JUMP_VELOCITY;
+        this.onGround = false;
+      }
+      // Gravity with terminal velocity.
+      this.velocity.y -= GRAVITY * dt;
+      if (this.velocity.y < -TERMINAL_VELOCITY) this.velocity.y = -TERMINAL_VELOCITY;
     }
-
-    // Gravity with terminal velocity.
-    this.velocity.y -= GRAVITY * dt;
-    if (this.velocity.y < -TERMINAL_VELOCITY) this.velocity.y = -TERMINAL_VELOCITY;
 
     // Sub-step so no single axis move exceeds MAX_STEP (keeps face snapping exact).
     const dx = this.velocity.x * dt;

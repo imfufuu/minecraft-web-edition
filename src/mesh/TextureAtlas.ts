@@ -30,6 +30,8 @@ const PLANK: RGB = [162, 131, 79];
 const PLANK_LINE: RGB = [110, 86, 48];
 const BRICK: RGB = [152, 72, 56];
 const MORTAR: RGB = [176, 170, 162];
+const WATER: RGB = [52, 96, 212];
+const WATER_LIGHT: RGB = [84, 132, 232];
 
 /** Pixel painter for one tile: (x, y) in [0, 16) with y = 0 at the TOP of the tile. */
 type Painter = (x: number, y: number, rnd: Rnd) => RGB;
@@ -81,6 +83,11 @@ const painters: Record<Tile, Painter> = {
     const border = x % 4 === 0 || y % 4 === 0;
     const base: RGB = border ? [88, 88, 88] : [122 + cell * 22, 122 + cell * 22, 122 + cell * 22];
     return vary(base, 10, rnd(x, y));
+  },
+  [Tile.WATER]: (x, y, rnd) => {
+    // Soft diagonal ripples; alpha is applied by the material, not the texture.
+    const ripple = Math.sin((x + y * 0.5) * 0.9 + rnd(0, Math.floor(y / 4), 6) * 2) > 0.55;
+    return vary(ripple ? WATER_LIGHT : WATER, 8, rnd(x, y));
   },
 };
 

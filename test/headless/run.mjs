@@ -78,6 +78,7 @@ await sleep(300);
 w.window.dispatchEvent(new w.KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
 console.log(`[${mode}] W for 300ms: moved ${(Math.hypot(game.player.position.x - px0, 0)).toFixed(2)} in x; feet ${feet0.toFixed(3)} -> ${game.player.position.y.toFixed(3)} onGround=${game.player.onGround}`);
 const groundedBefore = game.player.onGround;
+console.log(`[${mode}] grounded=${groundedBefore} inWater=${game.player.inWater} (P11-b: the W walk from the P9 position wades into the sea)`);
 let joyMoved = false;
 if (mode !== 'lock-ok') {
   const joy = w.document.querySelector('.joystick');
@@ -107,7 +108,7 @@ if (mode !== 'lock-ok') {
   if (!tc || tc.classList.contains('hidden')) failures.push('touch controls not visible');
   if (!joyMoved) failures.push('joystick did not move the player');
 }
-if (!groundedBefore) failures.push('player not grounded');
+if (!groundedBefore && !game.player.inWater) failures.push('player not grounded (and not swimming)');
 if (game.frames() < 30) failures.push('main loop stalled');
 if (errors.length) failures.push('runtime errors: ' + errors.join('; '));
 if (w.document.querySelector('.error-bar')) failures.push('error bar shown');
