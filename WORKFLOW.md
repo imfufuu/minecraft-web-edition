@@ -1,7 +1,7 @@
 # Minecraft Web Edition — Workflow
 
 ## 当前阶段
-P9 — IndexedDB 增量存档与恢复
+P10 — 动态区块加载/卸载 + Worker 生成与网格化
 
 ## 阶段状态机
 | 阶段 | 名称 | 状态 | 验收标准是否满足 | 核心指标记录 (DrawCalls/FPS等) | 备注 |
@@ -15,12 +15,12 @@ P9 — IndexedDB 增量存档与恢复
 | P6 | 方块交互（挖掘/放置） | done | yes | DDA 与 7.3 公式 32/32 一致；边界挖掘 leaked=0；重建 2 次 → dispose 2 次 | 体素 DDA，无需 Raycaster |
 | P7 | 快捷栏、注册表与程序化纹理 | done | yes | 12 tile 确定性图集（字节级一致）；10 种方块；Textures=1；UV 内缩 0.001 | DataTexture + Nearest + sRGB |
 | P8 | 顶点光照与环境光遮蔽(AO) | done | yes | 无灯光 MeshBasicMaterial；AO 值手算全对（1.0/.82/.65/.45）；镜像对称；24 三角形 CCW | F4 AO / F6 明暗 开关 |
-| P9 | IndexedDB 增量存档与恢复 | in-progress | no | - | |
+| P9 | IndexedDB 增量存档与恢复 | done | yes | 放置/破坏→flush→重新 bootstrap：方块/位置/热栏/模式全部恢复；save 1.3 ms；clearAll 后为新世界 | 存档仅含 diff，不存整区块 |
 | P10 | Web Worker 多线程与视距卸载 | pending | no | - | |
 | P11 | 可选进阶特性 | pending | no | - | |
 
 ## 当前任务
-`World.modifiedBlocks: Map<chunkKey, Map<index, BlockId>>`（仅玩家修改写入）；`world/WorldStorage.ts` 封装 IndexedDB `MinecraftWebDB`（`meta`: seed/position/yaw/pitch/hotbar；`chunk_diffs`）；5 秒自动保存 + 修改防抖；菜单“立即保存 / 新建世界”；启动时读档 → 以存档 seed 建世界 → 区块生成后叠加 diff → 恢复玩家。
+`world/ChunkLoader.ts`：以玩家所在区块为中心的螺旋加载队列（RENDER_DISTANCE 6–8），每帧限额生成/网格上传 ≤1–2；超出 RENDER_DISTANCE+2 的区块卸载（`geometry.dispose()` + 从 scene 移除 + 从 Map 删除，diff 保留在 `modifiedBlocks`）；`workers/chunk.worker.ts` 接收 (cx,cz,seed) 产出 padded 18×H×18 Uint8Array，再在 Worker 内网格化并以 Transferable 回传 position/normal/uv/color/index；主线程只做 BufferGeometry 上传。F3 增加 loaded/queued/uploaded-per-frame 指标。
 
 ## 阻塞项与风险
 无。
@@ -34,7 +34,7 @@ P9 — IndexedDB 增量存档与恢复
 风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署，且当前令牌无权修改环境规则；后续如需再次部署需合并 PR 到 main，或由仓库所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略（工作流已监听 `arena/**` 推送）。
 
 ## 下一步计划（当前任务完成后）
-P9 验收（搭建→刷新→原位恢复；新建世界清空）后进入 P10：螺旋队列动态视距 + Worker Padded Chunk 生成/网格化 + Transferable。
+P10 验收（长距离移动无卡顿、无 WebGL 内存增长、Worker 生成与主线程逐字节一致）后进入 P11 可选项：树木、水面、昼夜、Greedy Meshing。
 
 ## 架构快照（当前目录树）
 ```text
@@ -67,6 +67,7 @@ src/
 ├── core/
 │   ├── Renderer.ts         # WebGLRenderer + PerspectiveCamera + Scene 封装，resize 处理，info.autoReset=false
 │   ├── Loop.ts             # rAF 主循环，dt = min(clock.getDelta(), MAX_DELTA=0.1)
+│   ├── SaveManager.ts      # 5 s 周期 + 1.5 s 编辑防抖自动保存；visibilitychange/pagehide flush；并发合并
 │   ├── InputManager.ts     # 按键/鼠标键 Set、mouse delta、滚轮；CaptureMode none/locked/fallback；fallback 用 Pointer Events 差分（鼠标/触屏），轻点=点击、长按=右键
 │   └── FirstPersonCamera.ts# YXZ 欧拉、pitch 钳制、setEyePosition（位移由 Player 决定）
 ├── vite-env.d.ts           # __BUILD_ID__ 声明（vite define 注入 git hash + 时间）
@@ -117,3 +118,7 @@ src/
 - [2026-11-22 / P8] 顶点顺序为 Z 形（0 左下、1 右下、2 左上、3 右上），默认对角线 1–2，翻转对角线 0–3（索引 `[0,1,3,0,3,2]`，已验证 CCW 且面积和为 1）；翻转条件 `ao1+ao2 > ao0+ao3`，即"对角线连向更暗的一对"（0fps 规则），与规范循环顺序下的 `ao0+ao2 > ao1+ao3` / `[1,2,3,1,3,0]` 等价。
 - [2026-11-22 / P8] 光照完全烘焙进顶点色，材质改为无光照 `MeshBasicMaterial({map, vertexColors})` 并移除 Ambient/Directional 灯光：每帧 GPU 光照成本为 0；F4/F6 切换时 `rebuildAll()` 经 dispose 重建。F5 保留给浏览器刷新（P9 验收需要）。
 - [2026-11-22 / P8] 性能：顶点数/面数与 P7 相同（AO 只改变颜色属性与索引顺序），Draw Calls 不变。
+- [2026-11-22 / P9] 存档粒度 = 稀疏 diff：`World.setBlock` 只记录玩家修改（`Map<chunkKey, Map<flatIndex, id>>`，破坏记为 AIR 而非删除条目），区块重新生成后叠加 diff；因此存档大小与修改数成正比，与世界大小无关，且 P10 卸载区块时 diff 保留在内存，不会丢失。
+- [2026-11-22 / P9] IndexedDB 记录用 `Uint16Array indices + Uint8Array ids` 结构化克隆，而非 JSON 字符串：100 次修改约 300 B。`WorldStorage` 在无 IndexedDB 环境下自动降级为 no-op，并在菜单提示。
+- [2026-11-22 / P9] Seed 优先级：URL `?seed=` > 存档 seed > 默认；若 URL seed 与存档不同则清空旧存档（diff 不能跨 seed 复用）。"新建世界"写入时间哈希的新 seed 后刷新页面（去掉 `?seed=`）。
+- [2026-11-22 / P9] `bootstrap()` 变为 async（需先读 meta 才能决定 seed）；smoke 测试引入 `fake-indexeddb`（dev 依赖）做真实的 编辑→flush→二次 bootstrap 复原验证：方块 7、位置 (4.25,27,−2.5)、diffs=1、unsaved=0，保存耗时 1.3 ms。
