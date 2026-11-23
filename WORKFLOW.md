@@ -43,7 +43,21 @@ src/
 ├── utils/
 │   └── raycast.ts          # raycastVoxels（Amanatides–Woo DDA，返回整数坐标+法线+命中点）、getTargetAndPlaceBlockCoords（7.3 参考公式）
 ├── blocks/
-│   ├── BlockTypes.ts       # BlockId (as const，11 种含 AIR) + isSolid
+│   ├── BlockTypes.ts       # BlockId (as const，14 种含 AIR/WATER/SNOW/CACTUS) + isSolid / isOpaque / isLiquid
+│   └── BlockRegistry.ts    # BlockDef{top,side,bottom tile, breakable}，getFaceTile(id, face)，HOTBAR_BLOCKS
+├── world/
+│   ├── Chunk.ts            # CHUNK_SIZE=16 / CHUNK_HEIGHT=64，Uint8Array(16384)，chunkIndex，越界读返回 AIR，dirty 标记
+│   ├── Biomes.ts           # 8 群系定义（表面/填充/树与仙人掌概率）、山地石线 38/雪线 48、surfaceBlockFor、ColumnInfo
+│   ├── TerrainGenerator.ts # 种子 -> 高度/温度/湿度/崎岖 4 路 Simplex；columnAt(h, biome)；fillColumn 通用于 16/18 布局；海平面 20 填水
+│   ├── Structures.ts       # TreePlacer：hash 候选 + 群系概率 + 间距规则；stamp() 外扩 2 格；仙人掌 1–3 高
+│   ├── PaddedChunk.ts      # 18×H×18 padded 生成、extractInner、applyDiffToPadded、PaddedBlockSource(BlockSource)
+│   ├── ChunkLoader.ts      # 螺旋队列 (rd=7, 177 块)；Worker 池 (min(4, cores-1))；≤2 上传/帧；> rd+2 卸载+dispose；无 Worker 时同步回退
+│   ├── World.ts            # Map<"cx,cz", Chunk>，getOrCreateChunk(叠加 diff)，getBlock/setBlock(记录 modifiedBlocks, editVersion)，applyDiff；边界修改连带标记邻区块 dirty
+│   └── WorldStorage.ts     # IndexedDB MinecraftWebDB v1：meta(seed, player) + chunk_diffs(Uint16 index / Uint8 id)；无 IDB 时 no-op
+├── utils/
+│   └── raycast.ts          # raycastVoxels（Amanatides–Woo DDA，返回整数坐标+法线+命中点）、getTargetAndPlaceBlockCoords（7.3 参考公式）
+├── blocks/
+│   ├── BlockTypes.ts       # BlockId (as const，14 种含 AIR/WATER/SNOW/CACTUS) + isSolid / isOpaque / isLiquid
 │   └── BlockRegistry.ts    # BlockDef{top,side,bottom tile, breakable}，getFaceTile(id, face)，HOTBAR_BLOCKS
 ├── world/
 │   ├── Chunk.ts            # CHUNK_SIZE=16 / CHUNK_HEIGHT=64，Uint8Array(16384)，chunkIndex，越界读返回 AIR，dirty 标记
@@ -56,7 +70,7 @@ src/
 │   └── math.ts             # floorMod、worldToChunkCoords、chunkToWorld、clamp/lerp/smoothstep
 ├── mesh/
 │   ├── FaceData.ts         # 6 面：dir / normal / 4 corners，FACE_INDICES=[0,1,2,2,1,3]（CCW 朝外）
-│   ├── TileIds.ts          # 图集 tile 索引（12 个）
+│   ├── TileIds.ts          # 图集 tile 索引（16 个）
 │   ├── TextureAtlas.ts     # paintAtlas(seed) 纯 TS 像素绘制 → RGBA；DataTexture(Nearest, sRGB)；getTileUV(内缩 0.001)；canvas 副本供缩略图
 │   ├── AtlasLayout.ts      # 图集常量 + getTileUV（无 three 依赖，供 Worker 使用）
 │   ├── Lighting.ts         # FACE_SHADE、AO_CURVE、vertexAO(side1,side2,corner)、QUAD_INDICES(_FLIPPED)、shouldFlipQuad
@@ -76,6 +90,7 @@ src/
     ├── DebugOverlay.ts     # F3 调试面板：FPS / Frame ms / Draw Calls / Triangles / Geometries / Pos / Chunk / Yaw / Pitch
     ├── PauseOverlay.ts     # 菜单层 + setStatus 状态提示 + setDiagnostics 诊断行（构建号等）
     ├── ErrorBar.ts         # window error / unhandledrejection → 屏幕顶部红色错误条
+    ├── TouchGuards.ts      # installTouchGuards（contextmenu/selectstart/gesture*/touchmove/双击缩放）+ Fullscreen 兼容封装
     ├── TouchControls.ts    # 虚拟摇杆（setMoveAxis）、▲跳/上、▼下、飞行按钮；右上常驻 F3 / ☰ 按钮
     ├── Hotbar.ts           # 9 格快捷栏：Digit1-9（onKeyPress）、滚轮（consumeWheel）、触屏点选；缩略图来自图集
     └── styles.css          # 全屏布局、调试面板、暂停层样式
