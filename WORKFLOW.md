@@ -1,7 +1,7 @@
 # Minecraft Web Edition — Workflow
 
 ## 当前阶段
-P10 — 动态区块加载/卸载 + Worker 生成与网格化
+P11 — 可选进阶特性（树木 → 水面 → 昼夜）
 
 ## 阶段状态机
 | 阶段 | 名称 | 状态 | 验收标准是否满足 | 核心指标记录 (DrawCalls/FPS等) | 备注 |
@@ -16,30 +16,26 @@ P10 — 动态区块加载/卸载 + Worker 生成与网格化
 | P7 | 快捷栏、注册表与程序化纹理 | done | yes | 12 tile 确定性图集（字节级一致）；10 种方块；Textures=1；UV 内缩 0.001 | DataTexture + Nearest + sRGB |
 | P8 | 顶点光照与环境光遮蔽(AO) | done | yes | 无灯光 MeshBasicMaterial；AO 值手算全对（1.0/.82/.65/.45）；镜像对称；24 三角形 CCW | F4 AO / F6 明暗 开关 |
 | P9 | IndexedDB 增量存档与恢复 | done | yes | 放置/破坏→flush→重新 bootstrap：方块/位置/热栏/模式全部恢复；save 1.3 ms；clearAll 后为新世界 | 存档仅含 diff，不存整区块 |
-| P10 | Web Worker 多线程与视距卸载 | pending | no | - | |
-| P11 | 可选进阶特性 | pending | no | - | |
+| P10 | Web Worker 多线程与视距卸载 | done | yes | rd=7 → 177 区块；Worker 内生成+网格 ≈5.5 ms/块；主线程 ≤2 上传/帧；远离后 69/69 网格全部 dispose；Worker 输出与主线程逐字节一致 | Worker 包 7.9 kB，不含 three |
+| P11 | 可选进阶特性 | in-progress | no | - | 顺序：树木 → 水面 → 昼夜 |
 
 ## 当前任务
-`world/ChunkLoader.ts`：以玩家所在区块为中心的螺旋加载队列（RENDER_DISTANCE 6–8），每帧限额生成/网格上传 ≤1–2；超出 RENDER_DISTANCE+2 的区块卸载（`geometry.dispose()` + 从 scene 移除 + 从 Map 删除，diff 保留在 `modifiedBlocks`）；`workers/chunk.worker.ts` 接收 (cx,cz,seed) 产出 padded 18×H×18 Uint8Array，再在 Worker 内网格化并以 Transferable 回传 position/normal/uv/color/index；主线程只做 BufferGeometry 上传。F3 增加 loaded/queued/uploaded-per-frame 指标。
+P11-a 树木：`world/Structures.ts` 用 `hash2D(seed, wx, wz)` 决定每列是否为树心（概率约 1/180，仅草地且 h>SEA_LEVEL+1），树形确定性（干 4–6 格 OakLog + 半径 2 球冠 Leaves）；生成写入 padded 体积时需考虑邻近 2 格内其他区块的树冠（在 padded 生成阶段对 [-3,18] 范围的树心做结构叠加，保证跨区块树冠无缝且与加载顺序无关）；主线程 `TerrainGenerator.generate` 与 padded 路径共用同一结构函数，保持逐字节一致。
 
 ## 阻塞项与风险
 无。
 
 风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署且令牌无权修改环境规则；每次部署需 PR 合并到 main（或由所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略）。
 
-风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署且令牌无权修改环境规则；每次部署需 PR 合并到 main（或由所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略）。
-
-风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署且令牌无权修改环境规则；每次部署需 PR 合并到 main（或由所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略）。
-
-风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署，且当前令牌无权修改环境规则；后续如需再次部署需合并 PR 到 main，或由仓库所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略（工作流已监听 `arena/**` 推送）。
+风险备注：Worker 路径与主线程 `rebuildDirty` 路径在**视距边缘**可能不一致：主线程重建（玩家编辑后）对未加载邻区块按 AIR 处理，而 Worker 用 padded 生成数据。只影响被编辑且位于加载边缘的区块，玩家靠近后邻区块加载即恢复。
 
 ## 下一步计划（当前任务完成后）
-P10 验收（长距离移动无卡顿、无 WebGL 内存增长、Worker 生成与主线程逐字节一致）后进入 P11 可选项：树木、水面、昼夜、Greedy Meshing。
+P11-b 水面（SEA_LEVEL=20 以下填 Water，半透明第二材质/第二网格，仍 ≤2 draw calls/区块）；P11-c 昼夜（天空色 + 顶点色全局乘数 uniform，不重建网格）；P11-d Greedy Meshing（可选，需与 AO 兼容：仅合并 AO 四角相同的面）。
 
 ## 架构快照（当前目录树）
 ```text
 src/
-├── main.ts                 # 入口：?seed= 解析，World.generateArea(-2,2)，ChunkMeshManager，Player 驱动相机眼位，Loop / Input / UI
+├── main.ts                 # 入口：async bootstrap；?seed= / ?rd= 解析；ChunkLoader 流式加载；Player 驱动相机眼位；Loop / Input / UI
 ├── player/
 │   ├── PhysicsAABB.ts      # AABB 类型、aabbIntersects、boxCollides（仅遍历覆盖的整数格）、sweepAxis（分轴扫掠 + 贴齐 ±SKIN）
 │   ├── Player.ts           # 0.6×1.8×0.6，眼高 1.62；重力 28 / 终端 50 / 跳跃 8.5；Y→X→Z 子步 ≤0.5；F 切换 survival/fly；y<-30 重生
@@ -62,6 +58,7 @@ src/
 │   ├── FaceData.ts         # 6 面：dir / normal / 4 corners，FACE_INDICES=[0,1,2,2,1,3]（CCW 朝外）
 │   ├── TileIds.ts          # 图集 tile 索引（12 个）
 │   ├── TextureAtlas.ts     # paintAtlas(seed) 纯 TS 像素绘制 → RGBA；DataTexture(Nearest, sRGB)；getTileUV(内缩 0.001)；canvas 副本供缩略图
+│   ├── AtlasLayout.ts      # 图集常量 + getTileUV（无 three 依赖，供 Worker 使用）
 │   ├── Lighting.ts         # FACE_SHADE、AO_CURVE、vertexAO(side1,side2,corner)、QUAD_INDICES(_FLIPPED)、shouldFlipQuad
 │   ├── ChunkMesher.ts      # 暴露面剔除；跨区块 solidAt；UV；顶点色 = shade × AO；对角线翻转；options{ao, shading}
 │   └── ChunkMeshManager.ts # Map<key, Mesh>，rebuild = remove(dispose) + 新建；rebuildDirty / rebuildAll / remove；全空区块不建 Mesh
@@ -123,3 +120,7 @@ src/
 - [2026-11-22 / P9] IndexedDB 记录用 `Uint16Array indices + Uint8Array ids` 结构化克隆，而非 JSON 字符串：100 次修改约 300 B。`WorldStorage` 在无 IndexedDB 环境下自动降级为 no-op，并在菜单提示。
 - [2026-11-22 / P9] Seed 优先级：URL `?seed=` > 存档 seed > 默认；若 URL seed 与存档不同则清空旧存档（diff 不能跨 seed 复用）。"新建世界"写入时间哈希的新 seed 后刷新页面（去掉 `?seed=`）。
 - [2026-11-22 / P9] `bootstrap()` 变为 async（需先读 meta 才能决定 seed）；smoke 测试引入 `fake-indexeddb`（dev 依赖）做真实的 编辑→flush→二次 bootstrap 复原验证：方块 7、位置 (4.25,27,−2.5)、diffs=1、unsaved=0，保存耗时 1.3 ms。
+- [2026-11-22 / P10] Worker 内用 **padded 18×H×18** 体积生成并直接网格化（跨区块剔除 + AO 都在 Worker 完成），主线程只做 `BufferGeometry` 上传（≤2/帧，实测 ≈0.3 ms/块）。因 padded 环来自同一确定性生成器，区块网格与加载顺序无关，无需"邻居到达后重建"。玩家编辑通过请求携带本块+8 邻块的 diff（Uint16/Uint8 数组）在 Worker 内叠加；若作业在途期间发生编辑且邻块有 diff，则安装后标记 dirty 由主线程重建。
+- [2026-11-22 / P10] 为了让 Worker 包不含 three（7.9 kB vs 115 kB），把 `getTileUV`/图集常量拆到 `AtlasLayout.ts`，`toGeometry` 移到 `ChunkMeshManager.buffersToGeometry`；`ChunkMesher` 现在零 three 依赖。
+- [2026-11-22 / P10] 验证：padded 内核与 `TerrainGenerator.generate` 逐字节一致（含负坐标）；Worker 流水线输出（data/positions/indices/colors/uvs/normals）与主线程 mesher 逐字节一致（3 块 2164 面）；邻块 diff 缺失时恰好少 1 个边界面（证明 diff 传递必要且生效）；rd=4 流式加载 69/69，远离后 69 网格全部 dispose、面计数归零，返回后被编辑区块通过 builder 重新叠加 diff；60 步行走峰值 71 块（上限 169）。打包后的 worker 在 Node 中独立运行 20 块：平均 5.5 ms/块，Transferable 6 个缓冲。
+- [2026-11-22 / P10] 生存模式下脚下区块未加载时物理暂停（`Player.groundReady`），避免穿透未加载地形；出生/读档所在区块在 bootstrap 内同步构建（≈3 ms）。`?rd=N` (2–12) 可调视距。
