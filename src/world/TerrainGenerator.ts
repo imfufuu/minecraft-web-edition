@@ -2,6 +2,7 @@ import { BlockId } from '../blocks/BlockTypes';
 import { SimplexNoise2D } from '../utils/noise';
 import { hashSeed } from '../utils/prng';
 import { CHUNK_HEIGHT, CHUNK_SIZE, type Chunk } from './Chunk';
+import { TreePlacer } from './Structures';
 
 export const SEA_LEVEL = 20;
 const BASE_HEIGHT = 24;
@@ -16,11 +17,13 @@ const DIRT_DEPTH = 3;
  */
 export class TerrainGenerator {
   readonly seed: number;
+  readonly trees: TreePlacer;
   private readonly heightNoise: SimplexNoise2D;
 
   constructor(seed: string | number) {
     this.seed = hashSeed(seed);
     this.heightNoise = new SimplexNoise2D(this.seed);
+    this.trees = new TreePlacer(this);
   }
 
   /** Surface height (y of the top-most solid block) at an absolute world column. */
@@ -57,6 +60,7 @@ export class TerrainGenerator {
         this.fillColumn(originX + lx, originZ + lz, chunk.data, lx + lz * CHUNK_SIZE, CHUNK_SIZE * CHUNK_SIZE);
       }
     }
+    this.trees.stamp(chunk.data, originX, originZ, CHUNK_SIZE, CHUNK_SIZE);
     chunk.dirty = true;
   }
 }

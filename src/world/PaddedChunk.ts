@@ -28,6 +28,7 @@ export function generatePaddedChunk(generator: TerrainGenerator, cx: number, cz:
       generator.fillColumn(originX + px, originZ + pz, data, px + pz * PADDED_SIZE, PADDED_SIZE * PADDED_SIZE);
     }
   }
+  generator.trees.stamp(data, originX, originZ, PADDED_SIZE, PADDED_SIZE);
   return data;
 }
 
