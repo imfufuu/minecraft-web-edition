@@ -35,9 +35,12 @@ if (mode === 'lock-ok') {
   game.player.position.set(4.25, h + 3, -2.5);
   await game.save.flush();
   const again = await bootstrap();
+  // P10: chunks stream in over frames (sync fallback in jsdom = 1 chunk/frame); wait for (0,0) to arrive.
+  for (let i = 0; i < 100 && !again.world.hasChunk(0, 0); i++) await sleep(20);
   const restoredBlock = again.world.getBlock(3, h + 2, 3);
   const pos = again.player.position;
   console.log(`[${mode}] P9 reload: restored=${again.restored} block=${restoredBlock} (expect 7) pos=(${pos.x.toFixed(2)},${pos.y.toFixed(2)},${pos.z.toFixed(2)}) diffs=${again.world.modifiedBlocks.size} unsaved=${again.world.unsavedDiffs.size} lastSaveMs=${game.save.lastSaveMs.toFixed(2)}`);
+  console.log(`[${mode}] P10 loader: mode=${again.loader.stats.mode} loaded=${again.world.chunks.size} queued=${again.loader.stats.queued} disposed=${again.meshes.disposed}`);
   if (restoredBlock !== 7 || !again.restored || Math.abs(pos.x - 4.25) > 1e-6 || again.world.unsavedDiffs.size !== 0) { console.log('P9 RELOAD FAILED'); process.exit(1); }
   again.loop.stop();
   await again.storage.clearAll();

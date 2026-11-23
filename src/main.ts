@@ -17,11 +17,11 @@ import { Hotbar } from './ui/Hotbar';
 import { TextureAtlas } from './mesh/TextureAtlas';
 import { WorldStorage, type WorldMeta } from './world/WorldStorage';
 import { SaveManager } from './core/SaveManager';
+import { ChunkLoader, DEFAULT_RENDER_DISTANCE } from './world/ChunkLoader';
 import { hashSeed } from './utils/prng';
 
 const SKY_COLOR = 0x87ceeb;
 const DEFAULT_SEED = 'minecraft-web';
-const WORLD_RADIUS = 2; // [-2, 2] -> 5×5 chunks
 
 function urlSeed(): string | null {
   const param = new URLSearchParams(window.location.search).get('seed');
@@ -47,6 +47,8 @@ export interface GameHandle {
   world: World;
   hotbar: Hotbar;
   save: SaveManager;
+  loader: ChunkLoader;
+  meshes: ChunkMeshManager;
   storage: WorldStorage;
   seed: string;
   restored: boolean;
@@ -85,23 +87,25 @@ export async function bootstrap(): Promise<GameHandle> {
   } else if (savedMeta !== null) {
     await storage.clearAll(); // different seed requested: the old save no longer applies
   }
-  const t0 = performance.now();
-  world.generateArea(-WORLD_RADIUS, WORLD_RADIUS);
-  const genMs = performance.now() - t0;
+  const rdParam = Number(new URLSearchParams(window.location.search).get('rd'));
+  const renderDistance = Number.isFinite(rdParam) && rdParam >= 2 ? Math.min(12, Math.floor(rdParam)) : DEFAULT_RENDER_DISTANCE;
 
   // --- One merged mesh per chunk (cross-chunk culling + frustum culling) ---
   const atlas = new TextureAtlas();
   // Lighting is fully baked into vertex colours (directional shade × AO): unlit material, zero per-frame GPU lighting cost.
   const chunkMaterial = new THREE.MeshBasicMaterial({ map: atlas.texture, vertexColors: true });
   const meshes = new ChunkMeshManager(scene, world, chunkMaterial);
-  const t1 = performance.now();
-  meshes.rebuildAll();
-  const meshMs = performance.now() - t1;
+  // Streaming loader: spiral queue around the player, worker pool, ≤2 uploads/frame, unload beyond rd+2.
+  const loader = new ChunkLoader(world, meshes, seed, meshes.mesher.options, renderDistance);
 
   // --- Input, camera & player: spawn on the surface at the origin column ---
   const input = new InputManager(gfx.renderer.domElement);
   const fps = new FirstPersonCamera(camera, input);
   const player = new Player(input, world);
+  player.groundReady = (x, z) => {
+    const c = worldToChunkCoords(x, 0, z);
+    return world.hasChunk(c.cx, c.cz);
+  };
   player.setSpawn(0.5, world.generator.heightAt(0, 0) + 1, 0.5);
   fps.setLook(Math.PI * 0.75, -0.15);
   if (restoring && savedMeta) {
@@ -110,6 +114,11 @@ export async function bootstrap(): Promise<GameHandle> {
     player.mode = p.mode;
     fps.setLook(p.yaw, p.pitch);
   }
+  // The chunk under the player's feet is built synchronously so physics has ground on frame 1.
+  const t0 = performance.now();
+  const spawnChunk = worldToChunkCoords(player.position.x, player.position.y, player.position.z);
+  loader.loadNow(spawnChunk.cx, spawnChunk.cz);
+  const spawnMs = performance.now() - t0;
   const eye = new THREE.Vector3();
   const interaction = new BlockInteraction(world, player, camera, input, scene);
 
@@ -186,7 +195,14 @@ export async function bootstrap(): Promise<GameHandle> {
   input.onModeChanged((mode) => touchControls.setVisible(mode !== 'none' && input.touchControlsEnabled));
   debug.addLine(() => `Yaw: ${THREE.MathUtils.radToDeg(fps.yaw).toFixed(1)}°  Pitch: ${THREE.MathUtils.radToDeg(fps.pitch).toFixed(1)}°  Input: ${input.captureMode}`);
   debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Meshes: ${meshes.meshes.size}  Faces: ${meshes.totalFaces}`);
-  debug.addLine(() => `Gen: ${genMs.toFixed(1)} ms  Mesh: ${meshMs.toFixed(1)} ms`);
+  debug.addLine(() => {
+    const st = loader.stats;
+    return `Loader: ${st.mode}×${st.workers}  rd=${loader.renderDistance}  queued: ${st.queued}  inFlight: ${st.inFlight}  ready: ${st.ready}  uploads/frame: ${st.uploadedThisFrame}`;
+  });
+  debug.addLine(() => {
+    const st = loader.stats;
+    return `Chunk work: ${st.avgWorkMs.toFixed(2)} ms avg  upload: ${st.lastUploadMs.toFixed(2)} ms  unloaded: ${st.unloadedTotal}  disposed: ${meshes.disposed}  spawn: ${spawnMs.toFixed(1)} ms`;
+  });
   debug.addLine(() => {
     const h = interaction.hit;
     return h
@@ -203,9 +219,11 @@ export async function bootstrap(): Promise<GameHandle> {
   input.onKeyPress((code) => {
     if (code === 'F4') {
       meshes.mesher.options.ao = !meshes.mesher.options.ao;
+      loader.setOptions(meshes.mesher.options);
       meshes.rebuildAll();
     } else if (code === 'F6') {
       meshes.mesher.options.shading = !meshes.mesher.options.shading;
+      loader.setOptions(meshes.mesher.options);
       meshes.rebuildAll();
     }
   });
@@ -227,6 +245,8 @@ export async function bootstrap(): Promise<GameHandle> {
     touchControls.setFlyMode(player.mode === 'fly');
     hotbar.update();
     save.update(performance.now());
+    const pc = worldToChunkCoords(player.position.x, player.position.y, player.position.z);
+    loader.update(pc.cx, pc.cz);
     meshes.rebuildDirty();
   });
   loop.onRender(() => {
@@ -241,7 +261,7 @@ export async function bootstrap(): Promise<GameHandle> {
   });
   loop.start();
 
-  return { input, camera: fps, player, interaction, world, hotbar, save, storage, seed, restored: restoring, loop, frames: () => frameCount };
+  return { input, camera: fps, player, interaction, world, hotbar, save, loader, meshes, storage, seed, restored: restoring, loop, frames: () => frameCount };
 }
 
 if (!import.meta.env.SSR) {

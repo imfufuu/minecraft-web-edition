@@ -1,10 +1,9 @@
-import * as THREE from 'three';
 import { BlockId, isSolid } from '../blocks/BlockTypes';
 import { getFaceTile } from '../blocks/BlockRegistry';
 import { CHUNK_HEIGHT, CHUNK_SIZE, type Chunk } from '../world/Chunk';
 import { FACES } from './FaceData';
 import { AO_CURVE, FACE_SHADE, QUAD_INDICES, QUAD_INDICES_FLIPPED, shouldFlipQuad, vertexAO } from './Lighting';
-import { getTileUV } from './TextureAtlas';
+import { getTileUV } from './AtlasLayout';
 
 /** Raw CPU-side buffers produced by the mesher. */
 export interface MeshBuffers {
@@ -153,18 +152,5 @@ export class ChunkMesher {
       vertexCount,
       faceCount,
     };
-  }
-
-  /** Wraps mesher output in a BufferGeometry with bounds computed for frustum culling. */
-  static toGeometry(buffers: MeshBuffers): THREE.BufferGeometry {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(buffers.normals, 3));
-    geometry.setAttribute('uv', new THREE.BufferAttribute(buffers.uvs, 2));
-    geometry.setAttribute('color', new THREE.BufferAttribute(buffers.colors, 3));
-    geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
-    return geometry;
   }
 }

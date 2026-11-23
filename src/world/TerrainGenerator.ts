@@ -30,24 +30,31 @@ export class TerrainGenerator {
     return Math.max(1, Math.min(CHUNK_HEIGHT - 1, h));
   }
 
+  /**
+   * Fill one vertical column into any flat buffer. `base` is the index of y=0 for this
+   * column and `yStride` the distance between consecutive y layers — so the same routine
+   * serves both the 16×16 chunk layout and the 18×18 padded layout used by workers.
+   */
+  fillColumn(wx: number, wz: number, data: Uint8Array, base: number, yStride: number): void {
+    const h = this.heightAt(wx, wz);
+    const beach = h <= SEA_LEVEL + 1;
+    for (let y = 0; y <= h; y++) {
+      let id: BlockId;
+      if (y === 0) id = BlockId.BEDROCK;
+      else if (y === h) id = beach ? BlockId.SAND : BlockId.GRASS;
+      else if (y >= h - DIRT_DEPTH) id = beach ? BlockId.SAND : BlockId.DIRT;
+      else id = BlockId.STONE;
+      data[base + y * yStride] = id;
+    }
+  }
+
   /** Fill `chunk.data` in place using absolute world coordinates for every column. */
   generate(chunk: Chunk): void {
     const originX = chunk.cx * CHUNK_SIZE;
     const originZ = chunk.cz * CHUNK_SIZE;
-    const data = chunk.data;
-
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-        const h = this.heightAt(originX + lx, originZ + lz);
-        const beach = h <= SEA_LEVEL + 1;
-        for (let y = 0; y <= h; y++) {
-          let id: BlockId;
-          if (y === 0) id = BlockId.BEDROCK;
-          else if (y === h) id = beach ? BlockId.SAND : BlockId.GRASS;
-          else if (y >= h - DIRT_DEPTH) id = beach ? BlockId.SAND : BlockId.DIRT;
-          else id = BlockId.STONE;
-          data[lx + lz * CHUNK_SIZE + y * CHUNK_SIZE * CHUNK_SIZE] = id;
-        }
+        this.fillColumn(originX + lx, originZ + lz, chunk.data, lx + lz * CHUNK_SIZE, CHUNK_SIZE * CHUNK_SIZE);
       }
     }
     chunk.dirty = true;
