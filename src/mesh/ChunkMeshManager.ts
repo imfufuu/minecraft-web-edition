@@ -12,7 +12,7 @@ export class ChunkMeshManager {
   readonly material: THREE.Material;
   private readonly scene: THREE.Scene;
   private readonly world: World;
-  private readonly mesher = new ChunkMesher();
+  readonly mesher = new ChunkMesher();
 
   /** Running statistics for the debug overlay. */
   totalFaces = 0;

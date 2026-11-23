@@ -21,6 +21,11 @@ export class PauseOverlay {
           <li><b>F3</b> 调试面板 &nbsp;·&nbsp; <b>ESC</b> 释放鼠标</li>
         </ul>
         <p class="pause-status"></p>
+        <div class="pause-actions">
+          <button type="button" class="pause-btn act-save">立即保存</button>
+          <button type="button" class="pause-btn act-new">新建世界</button>
+          <span class="save-info"></span>
+        </div>
         <div class="pause-settings">
           <label>视角灵敏度 <input type="range" class="set-sens" min="0.3" max="3" step="0.1" /> <span class="set-sens-val"></span></label>
           <label><input type="checkbox" class="set-touch" /> 显示触屏摇杆/按钮</label>
@@ -31,7 +36,7 @@ export class PauseOverlay {
     this.diag = this.el.querySelector<HTMLParagraphElement>('.pause-diag') as HTMLParagraphElement;
     this.el.addEventListener('click', (e) => {
       // Clicks inside the settings block must not start the game.
-      if (e.target instanceof HTMLElement && e.target.closest('.pause-settings')) return;
+      if (e.target instanceof HTMLElement && e.target.closest('.pause-settings, .pause-actions')) return;
       e.preventDefault();
       onClick();
     });
@@ -40,6 +45,25 @@ export class PauseOverlay {
 
   setVisible(visible: boolean): void {
     this.el.classList.toggle('hidden', !visible);
+  }
+
+  /** Wire save / new-world buttons. */
+  bindActions(opts: { onSave: () => void; onNewWorld: () => void }): void {
+    const save = this.el.querySelector<HTMLButtonElement>('.act-save') as HTMLButtonElement;
+    const fresh = this.el.querySelector<HTMLButtonElement>('.act-new') as HTMLButtonElement;
+    save.addEventListener('click', (e) => {
+      e.stopPropagation();
+      opts.onSave();
+    });
+    fresh.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (window.confirm('确定要放弃当前世界并生成一个新的随机世界吗？\nDiscard this world and create a new one?')) opts.onNewWorld();
+    });
+  }
+
+  setSaveInfo(text: string): void {
+    const el = this.el.querySelector<HTMLSpanElement>('.save-info') as HTMLSpanElement;
+    el.textContent = text;
   }
 
   /** Wire the settings controls. */

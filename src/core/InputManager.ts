@@ -66,8 +66,8 @@ export class InputManager {
       this.release();
       return;
     }
-    // Keep F-keys / dev tools usable; everything else is game input while active.
-    if (this.active && !e.code.startsWith('F')) e.preventDefault();
+    // Keep F-keys / dev tools usable (except our own F4/F6 toggles); everything else is game input while active.
+    if (this.active && (!e.code.startsWith('F') || e.code === 'F4' || e.code === 'F6')) e.preventDefault();
     if (!e.repeat) for (const fn of this.keyPressListeners) fn(e.code);
     this.keys.add(e.code);
   };

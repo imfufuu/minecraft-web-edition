@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 import { JSDOM } from 'jsdom';
 const dom = new JSDOM('<!doctype html><html><body><div id="app"></div></body></html>', { pretendToBeVisual: true, url: 'https://imfufuu.github.io/minecraft-web-edition/' });
 const w = dom.window;
@@ -25,7 +26,22 @@ if (mode === 'lock-ok') {
 const { bootstrap } = await import('../../.smoke-out/entry.js');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let game;
-try { game = bootstrap(); } catch (e) { console.log('BOOTSTRAP THREW:', e); process.exit(1); }
+try { game = await bootstrap(); } catch (e) { console.log('BOOTSTRAP THREW:', e); process.exit(1); }
+console.log(`[${mode}] storage available=${game.storage.available} restored=${game.restored} seed=${game.seed}`);
+if (mode === 'lock-ok') {
+  // P9: edit a block, force a save, then boot a second instance and confirm the diff + player state came back.
+  const h = game.world.generator.heightAt(0, 0);
+  game.world.setBlock(3, h + 2, 3, 7);
+  game.player.position.set(4.25, h + 3, -2.5);
+  await game.save.flush();
+  const again = await bootstrap();
+  const restoredBlock = again.world.getBlock(3, h + 2, 3);
+  const pos = again.player.position;
+  console.log(`[${mode}] P9 reload: restored=${again.restored} block=${restoredBlock} (expect 7) pos=(${pos.x.toFixed(2)},${pos.y.toFixed(2)},${pos.z.toFixed(2)}) diffs=${again.world.modifiedBlocks.size} unsaved=${again.world.unsavedDiffs.size} lastSaveMs=${game.save.lastSaveMs.toFixed(2)}`);
+  if (restoredBlock !== 7 || !again.restored || Math.abs(pos.x - 4.25) > 1e-6 || again.world.unsavedDiffs.size !== 0) { console.log('P9 RELOAD FAILED'); process.exit(1); }
+  again.loop.stop();
+  await again.storage.clearAll();
+}
 await sleep(120);
 console.log(`[${mode}] frames after 120ms: ${game.frames()}  mode=${game.input.captureMode}  errors=${errors.length}`);
 const overlay = w.document.querySelector('.pause-overlay');
