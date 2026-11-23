@@ -1,7 +1,7 @@
 # Minecraft Web Edition — Workflow
 
 ## 当前阶段
-P8 — 顶点光照与环境光遮蔽(AO)
+P9 — IndexedDB 增量存档与恢复
 
 ## 阶段状态机
 | 阶段 | 名称 | 状态 | 验收标准是否满足 | 核心指标记录 (DrawCalls/FPS等) | 备注 |
@@ -14,16 +14,18 @@ P8 — 顶点光照与环境光遮蔽(AO)
 | P5 | 玩家物理与 AABB 碰撞 | done | yes | 静止 120 帧 y 唯一值=1；贴墙滑行 x 钉 4.6999；跳跃 1.22 格；dt=0.1 不穿地 | Y→X→Z 分轴扫掠，子步 ≤0.5 |
 | P6 | 方块交互（挖掘/放置） | done | yes | DDA 与 7.3 公式 32/32 一致；边界挖掘 leaked=0；重建 2 次 → dispose 2 次 | 体素 DDA，无需 Raycaster |
 | P7 | 快捷栏、注册表与程序化纹理 | done | yes | 12 tile 确定性图集（字节级一致）；10 种方块；Textures=1；UV 内缩 0.001 | DataTexture + Nearest + sRGB |
-| P8 | 顶点光照与环境光遮蔽(AO) | in-progress | no | - | |
-| P9 | IndexedDB 增量存档与恢复 | pending | no | - | |
+| P8 | 顶点光照与环境光遮蔽(AO) | done | yes | 无灯光 MeshBasicMaterial；AO 值手算全对（1.0/.82/.65/.45）；镜像对称；24 三角形 CCW | F4 AO / F6 明暗 开关 |
+| P9 | IndexedDB 增量存档与恢复 | in-progress | no | - | |
 | P10 | Web Worker 多线程与视距卸载 | pending | no | - | |
 | P11 | 可选进阶特性 | pending | no | - | |
 
 ## 当前任务
-Mesher 顶点颜色写入 方向面明度（顶 1.0 / ±Z 0.8 / ±X 0.65 / 底 0.5）× 4 级 AO（side1&side2 实心→0，否则 3−(s1+s2+c)，映射 [0.45,0.65,0.82,1.0]）；`ao0+ao2 > ao1+ao3` 时翻转对角线索引为 [1,2,3,1,3,0]；材质改 `MeshBasicMaterial({map, vertexColors})`；F3 支持开关 AO 对比。
+`World.modifiedBlocks: Map<chunkKey, Map<index, BlockId>>`（仅玩家修改写入）；`world/WorldStorage.ts` 封装 IndexedDB `MinecraftWebDB`（`meta`: seed/position/yaw/pitch/hotbar；`chunk_diffs`）；5 秒自动保存 + 修改防抖；菜单“立即保存 / 新建世界”；启动时读档 → 以存档 seed 建世界 → 区块生成后叠加 diff → 恢复玩家。
 
 ## 阻塞项与风险
-无。（iPad 反馈已处理：触屏拖拽 ×2.2 + 菜单内灵敏度滑块；新增虚拟摇杆 / 跳跃 / 下降 / 飞行按钮；右上角常驻 F3 与 ☰ 按钮。待用户复验手感。）
+无。
+
+风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署且令牌无权修改环境规则；每次部署需 PR 合并到 main（或由所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略）。
 
 风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署且令牌无权修改环境规则；每次部署需 PR 合并到 main（或由所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略）。
 
@@ -32,7 +34,7 @@ Mesher 顶点颜色写入 方向面明度（顶 1.0 / ±Z 0.8 / ±X 0.65 / 底 0
 风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署，且当前令牌无权修改环境规则；后续如需再次部署需合并 PR 到 main，或由仓库所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略（工作流已监听 `arena/**` 推送）。
 
 ## 下一步计划（当前任务完成后）
-P8 验收（阶梯/洞穴暗角、对称结构阴影对称、无对角黑斑）后进入 P9：IndexedDB 增量存档。
+P9 验收（搭建→刷新→原位恢复；新建世界清空）后进入 P10：螺旋队列动态视距 + Worker Padded Chunk 生成/网格化 + Transferable。
 
 ## 架构快照（当前目录树）
 ```text
@@ -59,7 +61,8 @@ src/
 │   ├── FaceData.ts         # 6 面：dir / normal / 4 corners，FACE_INDICES=[0,1,2,2,1,3]（CCW 朝外）
 │   ├── TileIds.ts          # 图集 tile 索引（12 个）
 │   ├── TextureAtlas.ts     # paintAtlas(seed) 纯 TS 像素绘制 → RGBA；DataTexture(Nearest, sRGB)；getTileUV(内缩 0.001)；canvas 副本供缩略图
-│   ├── ChunkMesher.ts      # 暴露面剔除；跨区块邻居查询；按 getFaceTile 写 UV；toGeometry 计算 BoundingBox/Sphere
+│   ├── Lighting.ts         # FACE_SHADE、AO_CURVE、vertexAO(side1,side2,corner)、QUAD_INDICES(_FLIPPED)、shouldFlipQuad
+│   ├── ChunkMesher.ts      # 暴露面剔除；跨区块 solidAt；UV；顶点色 = shade × AO；对角线翻转；options{ao, shading}
 │   └── ChunkMeshManager.ts # Map<key, Mesh>，rebuild = remove(dispose) + 新建；rebuildDirty / rebuildAll / remove；全空区块不建 Mesh
 ├── core/
 │   ├── Renderer.ts         # WebGLRenderer + PerspectiveCamera + Scene 封装，resize 处理，info.autoReset=false
@@ -110,3 +113,7 @@ src/
 - [2026-11-22 / P7] 纹理图集采用 **纯 TS 像素绘制器 → RGBA 缓冲 → `THREE.DataTexture`**（而非直接 CanvasTexture）：像素完全相同，但可在 Node 中做字节级确定性断言并导出 PNG 目视检查，无 `flipY` 歧义，无头冒烟测试不依赖 canvas 2D。浏览器中由同一缓冲生成 `<canvas>` 仅用于快捷栏缩略图。
 - [2026-11-22 / P7] 地形新增海滩：`h ≤ SEA_LEVEL+1` 的列顶层与 3 层表土为 SAND（仍完全确定性，5×5 区块 13,028 块沙）。
 - [2026-11-22 / P7] 性能：纹理数 1（单图集），Draw Calls 不变（≤ 视野内区块数），单区块顶点新增 uv 属性（+8 B/顶点）。
+- [2026-11-22 / P8] AO 邻居采样按**法线轴通用推导**切向两轴（无需 6 面 × 4 角手写表）：对角 `(ox+sx, oy+sy, oz+sz)`，两侧各置零一个切向分量；采样走与剔除相同的 `solidAt`（区块内直读，越界经 `world.getBlock`），因此邻区块方块能正确影响本区块边缘 AO。
+- [2026-11-22 / P8] 顶点顺序为 Z 形（0 左下、1 右下、2 左上、3 右上），默认对角线 1–2，翻转对角线 0–3（索引 `[0,1,3,0,3,2]`，已验证 CCW 且面积和为 1）；翻转条件 `ao1+ao2 > ao0+ao3`，即"对角线连向更暗的一对"（0fps 规则），与规范循环顺序下的 `ao0+ao2 > ao1+ao3` / `[1,2,3,1,3,0]` 等价。
+- [2026-11-22 / P8] 光照完全烘焙进顶点色，材质改为无光照 `MeshBasicMaterial({map, vertexColors})` 并移除 Ambient/Directional 灯光：每帧 GPU 光照成本为 0；F4/F6 切换时 `rebuildAll()` 经 dispose 重建。F5 保留给浏览器刷新（P9 验收需要）。
+- [2026-11-22 / P8] 性能：顶点数/面数与 P7 相同（AO 只改变颜色属性与索引顺序），Draw Calls 不变。
