@@ -21,11 +21,17 @@ export class PauseOverlay {
           <li><b>F3</b> 调试面板 &nbsp;·&nbsp; <b>ESC</b> 释放鼠标</li>
         </ul>
         <p class="pause-status"></p>
+        <div class="pause-settings">
+          <label>视角灵敏度 <input type="range" class="set-sens" min="0.3" max="3" step="0.1" /> <span class="set-sens-val"></span></label>
+          <label><input type="checkbox" class="set-touch" /> 显示触屏摇杆/按钮</label>
+        </div>
         <p class="pause-diag"></p>
       </div>`;
     this.status = this.el.querySelector<HTMLParagraphElement>('.pause-status') as HTMLParagraphElement;
     this.diag = this.el.querySelector<HTMLParagraphElement>('.pause-diag') as HTMLParagraphElement;
     this.el.addEventListener('click', (e) => {
+      // Clicks inside the settings block must not start the game.
+      if (e.target instanceof HTMLElement && e.target.closest('.pause-settings')) return;
       e.preventDefault();
       onClick();
     });
@@ -34,6 +40,27 @@ export class PauseOverlay {
 
   setVisible(visible: boolean): void {
     this.el.classList.toggle('hidden', !visible);
+  }
+
+  /** Wire the settings controls. */
+  bindSettings(opts: {
+    sensitivity: number;
+    touchControls: boolean;
+    onSensitivity: (v: number) => void;
+    onTouchControls: (v: boolean) => void;
+  }): void {
+    const sens = this.el.querySelector<HTMLInputElement>('.set-sens') as HTMLInputElement;
+    const sensVal = this.el.querySelector<HTMLSpanElement>('.set-sens-val') as HTMLSpanElement;
+    const touch = this.el.querySelector<HTMLInputElement>('.set-touch') as HTMLInputElement;
+    sens.value = String(opts.sensitivity);
+    sensVal.textContent = `${opts.sensitivity.toFixed(1)}×`;
+    touch.checked = opts.touchControls;
+    sens.addEventListener('input', () => {
+      const v = Number(sens.value);
+      sensVal.textContent = `${v.toFixed(1)}×`;
+      opts.onSensitivity(v);
+    });
+    touch.addEventListener('change', () => opts.onTouchControls(touch.checked));
   }
 
   /** Small status line under the controls (e.g. pointer-lock fallback notice). */

@@ -167,3 +167,198 @@ body {
   width: 20px;
   height: 2px;
 }
+
+/* ---------- System buttons (all devices) ---------- */
+.sys-buttons {
+  position: fixed;
+  right: 10px;
+  top: 8px;
+  z-index: 110;
+  display: flex;
+  gap: 6px;
+}
+
+.sys-btn {
+  min-width: 38px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font: 13px/1 'Courier New', monospace;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sys-btn:active {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.mode-badge {
+  right: 110px;
+}
+
+/* ---------- Touch controls ---------- */
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+}
+
+.touch-controls.hidden {
+  display: none;
+}
+
+.joystick {
+  position: absolute;
+  left: 28px;
+  bottom: 28px;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+}
+
+.touch-actions {
+  position: absolute;
+  right: 24px;
+  bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.touch-btn {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.32);
+  color: #fff;
+  font: 22px/1 'Courier New', monospace;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.touch-btn-small {
+  width: auto;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  font-size: 14px;
+}
+
+.touch-btn.active {
+  background: rgba(255, 224, 130, 0.6);
+  color: #000;
+}
+
+.touch-btn.hidden {
+  display: none;
+}
+
+/* ---------- Settings inside pause menu ---------- */
+.pause-settings {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 13px;
+  color: #ccc;
+  text-align: left;
+}
+
+.pause-settings label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+
+.pause-settings input[type='range'] {
+  flex: 1;
+}
+
+/* ---------- Hotbar ---------- */
+.hotbar {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 46;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.hotbar-slot {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: rgba(60, 60, 60, 0.5);
+  cursor: pointer;
+}
+
+.hotbar-slot.selected {
+  border-color: #fff;
+  background: rgba(120, 120, 120, 0.6);
+}
+
+.hotbar-icon {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  pointer-events: none;
+}
+
+.hotbar-num {
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  font-size: 10px;
+  color: #ddd;
+  text-shadow: 1px 1px 0 #000;
+}
+
+@media (max-width: 640px) {
+  .hotbar-slot {
+    width: 36px;
+    height: 36px;
+  }
+  .hotbar-icon {
+    width: 26px;
+    height: 26px;
+  }
+}

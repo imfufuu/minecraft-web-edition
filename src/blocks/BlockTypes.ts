@@ -5,18 +5,15 @@ export const BlockId = {
   DIRT: 2,
   STONE: 3,
   BEDROCK: 4,
+  SAND: 5,
+  OAK_LOG: 6,
+  LEAVES: 7,
+  PLANKS: 8,
+  BRICK: 9,
+  COBBLESTONE: 10,
 } as const;
 
 export type BlockId = (typeof BlockId)[keyof typeof BlockId];
-
-/** Temporary flat vertex colours (RGB 0..1) until the procedural texture atlas lands in P7. */
-export const BLOCK_COLORS: Readonly<Record<BlockId, readonly [number, number, number]>> = {
-  [BlockId.AIR]: [0, 0, 0],
-  [BlockId.GRASS]: [0.42, 0.68, 0.3],
-  [BlockId.DIRT]: [0.52, 0.37, 0.26],
-  [BlockId.STONE]: [0.5, 0.5, 0.52],
-  [BlockId.BEDROCK]: [0.2, 0.2, 0.22],
-};
 
 export function isSolid(id: number): boolean {
   return id !== BlockId.AIR;

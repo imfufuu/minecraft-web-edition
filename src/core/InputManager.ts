@@ -12,10 +12,44 @@
 export type CaptureMode = 'none' | 'locked' | 'fallback';
 
 const LOCK_TIMEOUT_MS = 400;
+const SETTINGS_KEY = 'mwe.input.v1';
+
+export interface InputSettings {
+  /** Multiplier applied to all look input (1 = default). */
+  lookSensitivity: number;
+  /** Extra multiplier for touch drags (fingers travel far less than a mouse). */
+  touchLookScale: number;
+  /** Show on-screen joystick/buttons. null = auto (touch devices only). */
+  touchControls: boolean | null;
+}
+
+const DEFAULT_SETTINGS: InputSettings = { lookSensitivity: 1, touchLookScale: 2.2, touchControls: null };
+
+function loadSettings(): InputSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_SETTINGS };
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return { ...DEFAULT_SETTINGS };
+    const o = parsed as Partial<Record<keyof InputSettings, unknown>>;
+    return {
+      lookSensitivity: typeof o.lookSensitivity === 'number' && o.lookSensitivity > 0 ? o.lookSensitivity : DEFAULT_SETTINGS.lookSensitivity,
+      touchLookScale: typeof o.touchLookScale === 'number' && o.touchLookScale > 0 ? o.touchLookScale : DEFAULT_SETTINGS.touchLookScale,
+      touchControls: typeof o.touchControls === 'boolean' ? o.touchControls : null,
+    };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
 
 export class InputManager {
   private readonly keys = new Set<string>();
+  private readonly virtualKeys = new Set<string>();
   private readonly mouseButtons = new Set<number>();
+  /** Analog movement axis from the on-screen joystick: x = strafe (+right), y = forward (+forward), |v| <= 1. */
+  private moveAxisX = 0;
+  private moveAxisY = 0;
+  readonly settings: InputSettings = loadSettings();
   private mouseDX = 0;
   private mouseDY = 0;
   private wheelDelta = 0;
@@ -25,6 +59,7 @@ export class InputManager {
   private readonly element: HTMLElement;
   private readonly modeListeners: ((mode: CaptureMode) => void)[] = [];
   private readonly clickListeners: ((button: number) => void)[] = [];
+  private readonly keyPressListeners: ((code: string) => void)[] = [];
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.code === 'Escape' && this.mode === 'fallback') {
@@ -33,6 +68,7 @@ export class InputManager {
     }
     // Keep F-keys / dev tools usable; everything else is game input while active.
     if (this.active && !e.code.startsWith('F')) e.preventDefault();
+    if (!e.repeat) for (const fn of this.keyPressListeners) fn(e.code);
     this.keys.add(e.code);
   };
 
@@ -97,8 +133,9 @@ export class InputManager {
 
   private readonly onPointerMove = (e: PointerEvent): void => {
     if (this.mode !== 'fallback' || e.pointerId !== this.dragPointerId) return;
-    this.mouseDX += e.clientX - this.dragLastX;
-    this.mouseDY += e.clientY - this.dragLastY;
+    const scale = e.pointerType === 'touch' ? this.settings.touchLookScale : 1;
+    this.mouseDX += (e.clientX - this.dragLastX) * scale;
+    this.mouseDY += (e.clientY - this.dragLastY) * scale;
     this.dragLastX = e.clientX;
     this.dragLastY = e.clientY;
     if (Math.abs(e.clientX - this.dragStartX) > 4 || Math.abs(e.clientY - this.dragStartY) > 4) this.dragMoved = true;
@@ -254,17 +291,37 @@ export class InputManager {
   }
 
   isDown(code: string): boolean {
-    return this.keys.has(code);
+    return this.keys.has(code) || this.virtualKeys.has(code);
   }
+
+  /** On-screen buttons feed the same key codes as the keyboard. */
+  setVirtualKey(code: string, down: boolean): void {
+    if (down) this.virtualKeys.add(code);
+    else this.virtualKeys.delete(code);
+  }
+
+  /** On-screen joystick. */
+  setMoveAxis(x: number, y: number): void {
+    const len = Math.hypot(x, y);
+    const k = len > 1 ? 1 / len : 1;
+    this.moveAxisX = x * k;
+    this.moveAxisY = y * k;
+  }
+
+  getMoveAxis(): { x: number; y: number } {
+    return { x: this.moveAxisX, y: this.moveAxisY };
+  }
+
+  /** Returns accumulated mouse delta (already scaled by lookSensitivity) since last call and resets it. */
 
   /** Mouse button currently held (0 left, 1 middle, 2 right). Only tracked in locked mode. */
   isMouseDown(button: number): boolean {
     return this.mouseButtons.has(button);
   }
 
-  /** Returns accumulated mouse delta since last call and resets it. */
   consumeMouseDelta(): { dx: number; dy: number } {
-    const d = { dx: this.mouseDX, dy: this.mouseDY };
+    const k = this.settings.lookSensitivity;
+    const d = { dx: this.mouseDX * k, dy: this.mouseDY * k };
     this.mouseDX = 0;
     this.mouseDY = 0;
     return d;
@@ -275,6 +332,26 @@ export class InputManager {
     const w = this.wheelDelta;
     this.wheelDelta = 0;
     return w;
+  }
+
+  /** Persist current settings to localStorage. */
+  saveSettings(): void {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
+    } catch {
+      /* storage may be unavailable (private mode) */
+    }
+  }
+
+  /** Whether on-screen controls should be shown (explicit setting or auto-detect touch). */
+  get touchControlsEnabled(): boolean {
+    if (this.settings.touchControls !== null) return this.settings.touchControls;
+    return typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  }
+
+  /** Programmatic "ESC": return to the menu. */
+  openMenu(): void {
+    this.release();
   }
 
   onModeChanged(fn: (mode: CaptureMode) => void): void {
@@ -290,6 +367,11 @@ export class InputManager {
     this.clickListeners.push(fn);
   }
 
+  /** Edge-triggered key down (no auto-repeat). */
+  onKeyPress(fn: (code: string) => void): void {
+    this.keyPressListeners.push(fn);
+  }
+
   private enterFallback(): void {
     if (this.mode !== 'none') return;
     this.setMode('fallback');
@@ -299,7 +381,10 @@ export class InputManager {
     if (this.mode === mode) return;
     this.mode = mode;
     this.keys.clear();
+    this.virtualKeys.clear();
     this.mouseButtons.clear();
+    this.moveAxisX = 0;
+    this.moveAxisY = 0;
     this.mouseDX = 0;
     this.mouseDY = 0;
     this.dragPointerId = null;

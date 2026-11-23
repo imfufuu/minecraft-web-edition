@@ -30,6 +30,7 @@ await sleep(120);
 console.log(`[${mode}] frames after 120ms: ${game.frames()}  mode=${game.input.captureMode}  errors=${errors.length}`);
 const overlay = w.document.querySelector('.pause-overlay');
 console.log(`[${mode}] overlay hidden before click: ${overlay.classList.contains('hidden')}`);
+if (mode !== 'lock-ok') game.input.settings.touchControls = true; // force on-screen controls in fallback runs
 overlay.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
 await sleep(500);
 console.log(`[${mode}] after click: mode=${game.input.captureMode} overlay hidden=${overlay.classList.contains('hidden')} status="${w.document.querySelector('.pause-status').textContent}"`);
@@ -50,20 +51,44 @@ if (mode === 'lock-ok') {
   canvas.dispatchEvent(mk('pointerup', 300, 150));
 }
 await sleep(60);
-console.log(`[${mode}] yaw moved: ${(game.camera.yaw - yaw0).toFixed(4)} rad (expect ≈ -0.44)  pitch=${game.camera.pitch.toFixed(3)}`);
+const expectedYaw = mode === 'lock-ok' ? -0.44 : -0.44 * game.input.settings.touchLookScale;
+console.log(`[${mode}] yaw moved: ${(game.camera.yaw - yaw0).toFixed(4)} rad (expect ≈ ${expectedYaw.toFixed(3)})  pitch=${game.camera.pitch.toFixed(3)}`);
 const feet0 = game.player.position.y; const px0 = game.player.position.x;
 w.window.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
 await sleep(300);
 w.window.dispatchEvent(new w.KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
 console.log(`[${mode}] W for 300ms: moved ${(Math.hypot(game.player.position.x - px0, 0)).toFixed(2)} in x; feet ${feet0.toFixed(3)} -> ${game.player.position.y.toFixed(3)} onGround=${game.player.onGround}`);
+const groundedBefore = game.player.onGround;
+let joyMoved = false;
+if (mode !== 'lock-ok') {
+  const joy = w.document.querySelector('.joystick');
+  joy.getBoundingClientRect = () => ({ left: 28, top: 500, width: 128, height: 128 });
+  joy.setPointerCapture = () => {}; joy.releasePointerCapture = () => {};
+  const PE = w.PointerEvent ?? w.MouseEvent;
+  const mk = (type, x, y) => new PE(type, { bubbles: true, clientX: x, clientY: y, pointerId: 9, pointerType: 'touch' });
+  game.player.mode = 'fly'; // avoid terrain steps blocking the walk
+  const before = { x: game.player.position.x, z: game.player.position.z };
+  joy.dispatchEvent(mk('pointerdown', 92, 564));
+  joy.dispatchEvent(mk('pointermove', 92, 516)); // 48px up = full forward
+  await sleep(300);
+  joy.dispatchEvent(mk('pointerup', 92, 516));
+  const dist = Math.hypot(game.player.position.x - before.x, game.player.position.z - before.z);
+  joyMoved = dist > 2 && game.input.getMoveAxis().y === 0;
+  console.log(`[${mode}] joystick forward 300ms: moved ${dist.toFixed(2)} blocks, axis reset=${game.input.getMoveAxis().y === 0}`);
+}
 console.log(`[${mode}] total frames=${game.frames()} errors=${JSON.stringify(errors)} diag="${w.document.querySelector('.pause-diag').textContent}" errorbar=${!!w.document.querySelector('.error-bar')}`);
 game.loop.stop();
 // --- assertions ---
 const failures = [];
 if (game.input.captureMode === 'none') failures.push('input never became active');
 if (!overlay.classList.contains('hidden')) failures.push('pause overlay still visible');
-if (Math.abs((game.camera.yaw - yaw0) + 0.44) > 0.01) failures.push('look did not rotate as expected');
-if (!game.player.onGround) failures.push('player not grounded');
+if (Math.abs((game.camera.yaw - yaw0) - expectedYaw) > 0.01) failures.push('look did not rotate as expected');
+if (mode !== 'lock-ok') {
+  const tc = w.document.querySelector('.touch-controls');
+  if (!tc || tc.classList.contains('hidden')) failures.push('touch controls not visible');
+  if (!joyMoved) failures.push('joystick did not move the player');
+}
+if (!groundedBefore) failures.push('player not grounded');
 if (game.frames() < 30) failures.push('main loop stalled');
 if (errors.length) failures.push('runtime errors: ' + errors.join('; '));
 if (w.document.querySelector('.error-bar')) failures.push('error bar shown');

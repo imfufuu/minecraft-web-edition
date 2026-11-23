@@ -96,7 +96,7 @@ export class Player {
     this.toggleLatch = pressed;
   }
 
-  /** Horizontal unit wish direction from WASD, derived from yaw only. */
+  /** Horizontal wish direction (|wish| <= 1) from WASD and/or the analog joystick, derived from yaw only. */
   private computeWishDirection(yaw: number): void {
     const sinY = Math.sin(yaw);
     const cosY = Math.cos(yaw);
@@ -108,7 +108,10 @@ export class Player {
     if (this.input.isDown('KeyS')) this.wish.sub(this.forward);
     if (this.input.isDown('KeyD')) this.wish.add(this.right);
     if (this.input.isDown('KeyA')) this.wish.sub(this.right);
-    if (this.wish.lengthSq() > 0) this.wish.normalize();
+    const axis = this.input.getMoveAxis();
+    this.wish.addScaledVector(this.forward, axis.y).addScaledVector(this.right, axis.x);
+    const len = this.wish.length();
+    if (len > 1) this.wish.multiplyScalar(1 / len);
   }
 
   private isSprinting(): boolean {

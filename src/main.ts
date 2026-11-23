@@ -12,6 +12,9 @@ import { worldToChunkCoords } from './utils/math';
 import { Player } from './player/Player';
 import { BlockInteraction } from './player/BlockInteraction';
 import { installGlobalErrorHandlers, showError } from './ui/ErrorBar';
+import { TouchControls } from './ui/TouchControls';
+import { Hotbar } from './ui/Hotbar';
+import { TextureAtlas } from './mesh/TextureAtlas';
 
 const SKY_COLOR = 0x87ceeb;
 const DEFAULT_SEED = 'minecraft-web';
@@ -29,6 +32,7 @@ export interface GameHandle {
   player: Player;
   interaction: BlockInteraction;
   world: World;
+  hotbar: Hotbar;
   loop: Loop;
   frames: () => number;
 }
@@ -62,7 +66,8 @@ export function bootstrap(): GameHandle {
   const genMs = performance.now() - t0;
 
   // --- One merged mesh per chunk (cross-chunk culling + frustum culling) ---
-  const chunkMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const atlas = new TextureAtlas();
+  const chunkMaterial = new THREE.MeshLambertMaterial({ map: atlas.texture, vertexColors: true });
   const meshes = new ChunkMeshManager(scene, world, chunkMaterial);
   const t1 = performance.now();
   meshes.rebuildAll();
@@ -90,7 +95,7 @@ export function bootstrap(): GameHandle {
   );
   const modeBadge = document.createElement('div');
   modeBadge.className = 'mode-badge hidden';
-  modeBadge.textContent = '拖拽环顾模式 · ESC 返回菜单 / Drag to look · ESC for menu';
+  modeBadge.textContent = '拖拽环顾 · ☰ 菜单';
   document.body.appendChild(modeBadge);
   input.onModeChanged((mode) => {
     pause.setVisible(mode === 'none');
@@ -100,6 +105,24 @@ export function bootstrap(): GameHandle {
     }
   });
   const debug = new DebugOverlay();
+  const touchControls = new TouchControls(input, () => debug.toggle());
+  const hotbar = new Hotbar(input, atlas);
+  hotbar.onSelect((id) => {
+    interaction.selectedBlock = id;
+  });
+  pause.bindSettings({
+    sensitivity: input.settings.lookSensitivity,
+    touchControls: input.touchControlsEnabled,
+    onSensitivity: (v) => {
+      input.settings.lookSensitivity = v;
+      input.saveSettings();
+    },
+    onTouchControls: (v) => {
+      input.settings.touchControls = v;
+      input.saveSettings();
+    },
+  });
+  input.onModeChanged((mode) => touchControls.setVisible(mode !== 'none' && input.touchControlsEnabled));
   debug.addLine(() => `Yaw: ${THREE.MathUtils.radToDeg(fps.yaw).toFixed(1)}°  Pitch: ${THREE.MathUtils.radToDeg(fps.pitch).toFixed(1)}°  Input: ${input.captureMode}`);
   debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Meshes: ${meshes.meshes.size}  Faces: ${meshes.totalFaces}`);
   debug.addLine(() => `Gen: ${genMs.toFixed(1)} ms  Mesh: ${meshMs.toFixed(1)} ms`);
@@ -109,6 +132,7 @@ export function bootstrap(): GameHandle {
       ? `Target: ${h.x}, ${h.y}, ${h.z}  face: ${h.nx}, ${h.ny}, ${h.nz}  dist: ${h.distance.toFixed(2)}  id: ${world.getBlock(h.x, h.y, h.z)}`
       : 'Target: none';
   });
+  debug.addLine(() => `Hand: ${interaction.selectedBlock} (${hotbar.selectedIndex + 1})  Textures: ${gfx.info.memory.textures}`);
   debug.addLine(() => {
     const p = player.position;
     const v = player.velocity;
@@ -124,6 +148,8 @@ export function bootstrap(): GameHandle {
     fps.setEyePosition(player.getEyePosition(eye));
     camera.updateMatrixWorld();
     interaction.update(performance.now());
+    touchControls.setFlyMode(player.mode === 'fly');
+    hotbar.update();
     meshes.rebuildDirty();
   });
   loop.onRender(() => {
@@ -138,7 +164,7 @@ export function bootstrap(): GameHandle {
   });
   loop.start();
 
-  return { input, camera: fps, player, interaction, world, loop, frames: () => frameCount };
+  return { input, camera: fps, player, interaction, world, hotbar, loop, frames: () => frameCount };
 }
 
 if (!import.meta.env.SSR) {

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { BLOCK_COLORS, BlockId, isSolid } from '../blocks/BlockTypes';
+import { BlockId, isSolid } from '../blocks/BlockTypes';
+import { getFaceTile } from '../blocks/BlockRegistry';
+import { getTileUV } from './TextureAtlas';
 import { CHUNK_HEIGHT, CHUNK_SIZE, type Chunk } from '../world/Chunk';
 import { FACES, FACE_INDICES } from './FaceData';
 
@@ -7,6 +9,7 @@ import { FACES, FACE_INDICES } from './FaceData';
 export interface MeshBuffers {
   positions: Float32Array;
   normals: Float32Array;
+  uvs: Float32Array;
   colors: Float32Array;
   indices: Uint32Array;
   vertexCount: number;
@@ -31,12 +34,14 @@ export class ChunkMesher {
   // Growable scratch arrays reused across builds to avoid GC churn.
   private positions: number[] = [];
   private normals: number[] = [];
+  private uvs: number[] = [];
   private colors: number[] = [];
   private indices: number[] = [];
 
   build(chunk: Chunk, world?: BlockSource): MeshBuffers {
     this.positions.length = 0;
     this.normals.length = 0;
+    this.uvs.length = 0;
     this.colors.length = 0;
     this.indices.length = 0;
 
@@ -50,8 +55,6 @@ export class ChunkMesher {
         for (let x = 0; x < CHUNK_SIZE; x++) {
           const id = chunk.getBlock(x, y, z);
           if (id === BlockId.AIR) continue;
-
-          const color = BLOCK_COLORS[id as BlockId] ?? BLOCK_COLORS[BlockId.STONE];
 
           for (const face of FACES) {
             const [dx, dy, dz] = face.dir;
@@ -72,10 +75,14 @@ export class ChunkMesher {
             if (isSolid(neighbour)) continue;
 
             const [fnx, fny, fnz] = face.normal;
-            for (const [cx, cy, cz] of face.corners) {
+            const uv = getTileUV(getFaceTile(id, face.name));
+            // Corner order per face: 0 = bottom-left, 1 = bottom-right, 2 = top-left, 3 = top-right (seen from outside).
+            for (let c = 0; c < 4; c++) {
+              const [cx, cy, cz] = face.corners[c];
               this.positions.push(x + cx, y + cy, z + cz);
               this.normals.push(fnx, fny, fnz);
-              this.colors.push(color[0], color[1], color[2]);
+              this.uvs.push(c === 1 || c === 3 ? uv.u1 : uv.u0, c >= 2 ? uv.v1 : uv.v0);
+              this.colors.push(1, 1, 1); // per-vertex light arrives in P8
             }
             for (const i of FACE_INDICES) this.indices.push(vertexCount + i);
             vertexCount += 4;
@@ -88,6 +95,7 @@ export class ChunkMesher {
     return {
       positions: new Float32Array(this.positions),
       normals: new Float32Array(this.normals),
+      uvs: new Float32Array(this.uvs),
       colors: new Float32Array(this.colors),
       indices: new Uint32Array(this.indices),
       vertexCount,
@@ -100,6 +108,7 @@ export class ChunkMesher {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
     geometry.setAttribute('normal', new THREE.BufferAttribute(buffers.normals, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(buffers.uvs, 2));
     geometry.setAttribute('color', new THREE.BufferAttribute(buffers.colors, 3));
     geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
     geometry.computeBoundingBox();
