@@ -1,7 +1,7 @@
 # Minecraft Web Edition — Workflow
 
 ## 当前阶段
-P7 — 快捷栏、注册表与程序化纹理
+P8 — 顶点光照与环境光遮蔽(AO)
 
 ## 阶段状态机
 | 阶段 | 名称 | 状态 | 验收标准是否满足 | 核心指标记录 (DrawCalls/FPS等) | 备注 |
@@ -13,24 +13,26 @@ P7 — 快捷栏、注册表与程序化纹理
 | P4 | 跨区块面剔除与网格合并 | done | yes | 25 区块面数 53,716→24,790（−53.8%），顶点 −53.8%；DrawCalls ≤ 视野内区块数，背对时 0 | 移除面数 == 理论接缝数 |
 | P5 | 玩家物理与 AABB 碰撞 | done | yes | 静止 120 帧 y 唯一值=1；贴墙滑行 x 钉 4.6999；跳跃 1.22 格；dt=0.1 不穿地 | Y→X→Z 分轴扫掠，子步 ≤0.5 |
 | P6 | 方块交互（挖掘/放置） | done | yes | DDA 与 7.3 公式 32/32 一致；边界挖掘 leaked=0；重建 2 次 → dispose 2 次 | 体素 DDA，无需 Raycaster |
-| P7 | 快捷栏、注册表与程序化纹理 | in-progress | no | - | |
-| P8 | 顶点光照与环境光遮蔽(AO) | pending | no | - | |
+| P7 | 快捷栏、注册表与程序化纹理 | done | yes | 12 tile 确定性图集（字节级一致）；10 种方块；Textures=1；UV 内缩 0.001 | DataTexture + Nearest + sRGB |
+| P8 | 顶点光照与环境光遮蔽(AO) | in-progress | no | - | |
 | P9 | IndexedDB 增量存档与恢复 | pending | no | - | |
 | P10 | Web Worker 多线程与视距卸载 | pending | no | - | |
 | P11 | 可选进阶特性 | pending | no | - | |
 
 ## 当前任务
-建立 `blocks/BlockRegistry.ts`（≥7 种方块，6 面 tile 索引）、`mesh/TextureAtlas.ts`（256×256 Canvas，16×16 tile，确定性像素噪点，NearestFilter + SRGB）、Mesher 输出 UV（内缩防渗色）、`ui/Hotbar.ts`（1–9 + 滚轮，缩略图来自图集）。
+Mesher 顶点颜色写入 方向面明度（顶 1.0 / ±Z 0.8 / ±X 0.65 / 底 0.5）× 4 级 AO（side1&side2 实心→0，否则 3−(s1+s2+c)，映射 [0.45,0.65,0.82,1.0]）；`ao0+ao2 > ao1+ao3` 时翻转对角线索引为 [1,2,3,1,3,0]；材质改 `MeshBasicMaterial({map, vertexColors})`；F3 支持开关 AO 对比。
 
 ## 阻塞项与风险
-待用户复验：用户反馈 GitHub Pages 上也无法锁定/拖拽。本地无头冒烟（`pnpm smoke`，jsdom + WebGLRenderer 桩）证明锁定成功 / 报错 / 静默三条路径下点击→激活→旋转→移动均正常，故已针对真实浏览器差异做加固：降级环顾改用 Pointer Events + clientX/Y 差分（兼容触屏，不依赖 movementX）、屏幕错误条、菜单底部诊断行（构建号 · webgl 版本 · pointer-lock 支持 · touch）。若仍失败，请用户反馈诊断行内容与是否出现红色错误条。
+无。（iPad 反馈已处理：触屏拖拽 ×2.2 + 菜单内灵敏度滑块；新增虚拟摇杆 / 跳跃 / 下降 / 飞行按钮；右上角常驻 F3 与 ☰ 按钮。待用户复验手感。）
+
+风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署且令牌无权修改环境规则；每次部署需 PR 合并到 main（或由所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略）。
 
 风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署且令牌无权修改环境规则；每次部署需 PR 合并到 main（或由所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略）。
 
 风险备注：GitHub Pages 的 `github-pages` 环境仅允许 `main` 分支部署，且当前令牌无权修改环境规则；后续如需再次部署需合并 PR 到 main，或由仓库所有者在 Settings → Environments → github-pages 添加 `arena/*` 分支策略（工作流已监听 `arena/**` 推送）。
 
 ## 下一步计划（当前任务完成后）
-P7 验收（像素纹理无模糊、草/原木异面、快捷栏切换放置）后进入 P8：方向面明度 + 逐顶点 AO + Quad flipping。
+P8 验收（阶梯/洞穴暗角、对称结构阴影对称、无对角黑斑）后进入 P9：IndexedDB 增量存档。
 
 ## 架构快照（当前目录树）
 ```text
@@ -43,7 +45,8 @@ src/
 ├── utils/
 │   └── raycast.ts          # raycastVoxels（Amanatides–Woo DDA，返回整数坐标+法线+命中点）、getTargetAndPlaceBlockCoords（7.3 参考公式）
 ├── blocks/
-│   └── BlockTypes.ts       # BlockId (as const) + 临时纯色表 BLOCK_COLORS + isSolid
+│   ├── BlockTypes.ts       # BlockId (as const，11 种含 AIR) + isSolid
+│   └── BlockRegistry.ts    # BlockDef{top,side,bottom tile, breakable}，getFaceTile(id, face)，HOTBAR_BLOCKS
 ├── world/
 │   ├── Chunk.ts            # CHUNK_SIZE=16 / CHUNK_HEIGHT=64，Uint8Array(16384)，chunkIndex，越界读返回 AIR，dirty 标记
 │   ├── TerrainGenerator.ts # 种子 -> SimplexNoise2D；heightAt(wx,wz)=24+fbm×14；草/土3层/石/基岩
@@ -54,7 +57,9 @@ src/
 │   └── math.ts             # floorMod、worldToChunkCoords、chunkToWorld、clamp/lerp/smoothstep
 ├── mesh/
 │   ├── FaceData.ts         # 6 面：dir / normal / 4 corners，FACE_INDICES=[0,1,2,2,1,3]（CCW 朝外）
-│   ├── ChunkMesher.ts      # 暴露面剔除；边缘邻居经 world.getBlock 跨区块查询；toGeometry 计算 BoundingBox/Sphere
+│   ├── TileIds.ts          # 图集 tile 索引（12 个）
+│   ├── TextureAtlas.ts     # paintAtlas(seed) 纯 TS 像素绘制 → RGBA；DataTexture(Nearest, sRGB)；getTileUV(内缩 0.001)；canvas 副本供缩略图
+│   ├── ChunkMesher.ts      # 暴露面剔除；跨区块邻居查询；按 getFaceTile 写 UV；toGeometry 计算 BoundingBox/Sphere
 │   └── ChunkMeshManager.ts # Map<key, Mesh>，rebuild = remove(dispose) + 新建；rebuildDirty / rebuildAll / remove；全空区块不建 Mesh
 ├── core/
 │   ├── Renderer.ts         # WebGLRenderer + PerspectiveCamera + Scene 封装，resize 处理，info.autoReset=false
@@ -66,6 +71,8 @@ src/
     ├── DebugOverlay.ts     # F3 调试面板：FPS / Frame ms / Draw Calls / Triangles / Geometries / Pos / Chunk / Yaw / Pitch
     ├── PauseOverlay.ts     # 菜单层 + setStatus 状态提示 + setDiagnostics 诊断行（构建号等）
     ├── ErrorBar.ts         # window error / unhandledrejection → 屏幕顶部红色错误条
+    ├── TouchControls.ts    # 虚拟摇杆（setMoveAxis）、▲跳/上、▼下、飞行按钮；右上常驻 F3 / ☰ 按钮
+    ├── Hotbar.ts           # 9 格快捷栏：Digit1-9（onKeyPress）、滚轮（consumeWheel）、触屏点选；缩略图来自图集
     └── styles.css          # 全屏布局、调试面板、暂停层样式
 ```
 
@@ -99,3 +106,7 @@ src/
 - [2026-11-22 / P6] 射线拾取选用 **体素 DDA**（Amanatides–Woo）而非 `THREE.Raycaster` 扫 Mesh：O(距离) 且直接得到整数坐标与面法线，无需 ±0.001 微移；已验证与 7.3 节参考公式在 32 组正负方向样本上完全一致（参考公式保留在 `utils/raycast.ts`）。
 - [2026-11-22 / P6] 邻区块重建责任放在 `World.setBlock`（数据层知道 lx/lz 边界），渲染层只消费 dirty 标记；角块一次修改最多标记 3 个区块。显存：每次重建 1 次 `geometry.dispose()`（计数验证）。
 - [2026-11-22 / P6] 降级（拖拽）模式下左键既是环顾键又是挖掘键 → 以"按下→抬起 <300ms 且位移 <4px"识别为点击；触屏长按 500ms = 右键放置。
+- [2026-11-22 / 触屏] iPad 反馈"拖动尺度偏小"：触屏指针差分 × `touchLookScale=2.2`（全屏宽约 300°），另加用户可调 `lookSensitivity`（0.3–3×，localStorage 持久化）。无键盘设备：`TouchControls` 提供摇杆（模拟轴并入 `Player.computeWishDirection`，|wish|≤1 带幅度）与 ▲/▼/飞行按钮（虚拟按键走同一 `isDown`），右上角常驻 **F3** 与 **☰** 按钮替代键盘。触屏控件自动在 `maxTouchPoints>0` 启用，菜单可手动开关。
+- [2026-11-22 / P7] 纹理图集采用 **纯 TS 像素绘制器 → RGBA 缓冲 → `THREE.DataTexture`**（而非直接 CanvasTexture）：像素完全相同，但可在 Node 中做字节级确定性断言并导出 PNG 目视检查，无 `flipY` 歧义，无头冒烟测试不依赖 canvas 2D。浏览器中由同一缓冲生成 `<canvas>` 仅用于快捷栏缩略图。
+- [2026-11-22 / P7] 地形新增海滩：`h ≤ SEA_LEVEL+1` 的列顶层与 3 层表土为 SAND（仍完全确定性，5×5 区块 13,028 块沙）。
+- [2026-11-22 / P7] 性能：纹理数 1（单图集），Draw Calls 不变（≤ 视野内区块数），单区块顶点新增 uv 属性（+8 B/顶点）。
