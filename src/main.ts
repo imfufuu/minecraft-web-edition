@@ -17,6 +17,8 @@ import { Hotbar } from './ui/Hotbar';
 import { TextureAtlas } from './mesh/TextureAtlas';
 import { WorldStorage, type WorldMeta } from './world/WorldStorage';
 import { SaveManager } from './core/SaveManager';
+import { BlockId } from './blocks/BlockTypes';
+import { CHUNK_HEIGHT } from './world/Chunk';
 import { ChunkLoader, DEFAULT_RENDER_DISTANCE } from './world/ChunkLoader';
 import { hashSeed } from './utils/prng';
 
@@ -119,6 +121,12 @@ export async function bootstrap(): Promise<GameHandle> {
   const spawnChunk = worldToChunkCoords(player.position.x, player.position.y, player.position.z);
   loader.loadNow(spawnChunk.cx, spawnChunk.cz);
   const spawnMs = performance.now() - t0;
+  if (!(restoring && savedMeta)) {
+    // Fresh spawn: climb above anything (e.g. a tree trunk) occupying the origin column.
+    let y = Math.floor(player.position.y);
+    while (y < CHUNK_HEIGHT - 2 && (world.getBlock(0, y, 0) !== BlockId.AIR || world.getBlock(0, y + 1, 0) !== BlockId.AIR)) y++;
+    player.setSpawn(0.5, y, 0.5);
+  }
   const eye = new THREE.Vector3();
   const interaction = new BlockInteraction(world, player, camera, input, scene);
 
