@@ -61,7 +61,7 @@ src/
 │   ├── AtlasLayout.ts      # 图集常量 + getTileUV（无 three 依赖，供 Worker 使用）
 │   ├── Lighting.ts         # FACE_SHADE、AO_CURVE、vertexAO(side1,side2,corner)、QUAD_INDICES(_FLIPPED)、shouldFlipQuad
 │   ├── ChunkMesher.ts      # 两组几何：不透明(isOpaque 剔除, AO) + 水面(仅对空气出面, 顶面下沉 0.125, 无 AO)；options{ao, shading}
-│   └── ChunkMeshManager.ts # Map<key, Mesh>，rebuild = remove(dispose) + 新建；rebuildDirty / rebuildAll / remove；全空区块不建 Mesh
+│   └── ChunkMeshManager.ts # 每区块 ≤2 Mesh（opaque + water renderOrder 1）；install/rebuild = remove(dispose 两者) + 新建；faces/waterFaces/disposed 计数
 ├── core/
 │   ├── Renderer.ts         # WebGLRenderer + PerspectiveCamera + Scene 封装，resize 处理，info.autoReset=false
 │   ├── Loop.ts             # rAF 主循环，dt = min(clock.getDelta(), MAX_DELTA=0.1)
