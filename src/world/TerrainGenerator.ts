@@ -39,11 +39,12 @@ export class TerrainGenerator {
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         const h = this.heightAt(originX + lx, originZ + lz);
+        const beach = h <= SEA_LEVEL + 1;
         for (let y = 0; y <= h; y++) {
           let id: BlockId;
           if (y === 0) id = BlockId.BEDROCK;
-          else if (y === h) id = BlockId.GRASS;
-          else if (y >= h - DIRT_DEPTH) id = BlockId.DIRT;
+          else if (y === h) id = beach ? BlockId.SAND : BlockId.GRASS;
+          else if (y >= h - DIRT_DEPTH) id = beach ? BlockId.SAND : BlockId.DIRT;
           else id = BlockId.STONE;
           data[lx + lz * CHUNK_SIZE + y * CHUNK_SIZE * CHUNK_SIZE] = id;
         }

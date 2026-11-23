@@ -59,6 +59,7 @@ export class InputManager {
   private readonly element: HTMLElement;
   private readonly modeListeners: ((mode: CaptureMode) => void)[] = [];
   private readonly clickListeners: ((button: number) => void)[] = [];
+  private readonly keyPressListeners: ((code: string) => void)[] = [];
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.code === 'Escape' && this.mode === 'fallback') {
@@ -67,6 +68,7 @@ export class InputManager {
     }
     // Keep F-keys / dev tools usable; everything else is game input while active.
     if (this.active && !e.code.startsWith('F')) e.preventDefault();
+    if (!e.repeat) for (const fn of this.keyPressListeners) fn(e.code);
     this.keys.add(e.code);
   };
 
@@ -363,6 +365,11 @@ export class InputManager {
 
   onClick(fn: (button: number) => void): void {
     this.clickListeners.push(fn);
+  }
+
+  /** Edge-triggered key down (no auto-repeat). */
+  onKeyPress(fn: (code: string) => void): void {
+    this.keyPressListeners.push(fn);
   }
 
   private enterFallback(): void {

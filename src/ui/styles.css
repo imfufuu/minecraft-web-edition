@@ -299,3 +299,66 @@ body {
 .pause-settings input[type='range'] {
   flex: 1;
 }
+
+/* ---------- Hotbar ---------- */
+.hotbar {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 46;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.hotbar-slot {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: rgba(60, 60, 60, 0.5);
+  cursor: pointer;
+}
+
+.hotbar-slot.selected {
+  border-color: #fff;
+  background: rgba(120, 120, 120, 0.6);
+}
+
+.hotbar-icon {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  pointer-events: none;
+}
+
+.hotbar-num {
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  font-size: 10px;
+  color: #ddd;
+  text-shadow: 1px 1px 0 #000;
+}
+
+@media (max-width: 640px) {
+  .hotbar-slot {
+    width: 36px;
+    height: 36px;
+  }
+  .hotbar-icon {
+    width: 26px;
+    height: 26px;
+  }
+}
