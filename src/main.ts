@@ -17,6 +17,7 @@ import { Hotbar } from './ui/Hotbar';
 import { TextureAtlas } from './mesh/TextureAtlas';
 import { WorldStorage, type WorldMeta } from './world/WorldStorage';
 import { SaveManager } from './core/SaveManager';
+import { DayNight, parseDayParam } from './core/DayNight';
 import { BlockId } from './blocks/BlockTypes';
 import { CHUNK_HEIGHT } from './world/Chunk';
 import { ChunkLoader, DEFAULT_RENDER_DISTANCE } from './world/ChunkLoader';
@@ -51,6 +52,7 @@ export interface GameHandle {
   save: SaveManager;
   loader: ChunkLoader;
   meshes: ChunkMeshManager;
+  dayNight: DayNight;
   storage: WorldStorage;
   seed: string;
   restored: boolean;
@@ -72,8 +74,12 @@ export async function bootstrap(): Promise<GameHandle> {
   const { scene, camera } = gfx;
 
   // --- Sky, fog, light ---
-  scene.background = new THREE.Color(SKY_COLOR);
-  scene.fog = new THREE.Fog(SKY_COLOR, 60, 160);
+  const dayParam = parseDayParam(new URLSearchParams(window.location.search).get('day'));
+  const dayNight = dayParam === null ? new DayNight() : new DayNight(dayParam, true);
+  const skyColor = new THREE.Color(SKY_COLOR).copy(dayNight.skyColor);
+  scene.background = skyColor;
+  const fog = new THREE.Fog(skyColor.getHex(), 60, 160);
+  scene.fog = fog;
 
   // --- Persistence: open DB, read meta, decide seed ---
   const storage = new WorldStorage();
@@ -105,6 +111,9 @@ export async function bootstrap(): Promise<GameHandle> {
     depthWrite: false,
     side: THREE.DoubleSide,
   });
+  // Day/night: a single uniform scales the baked vertex lighting — no chunk is ever rebuilt for time of day.
+  dayNight.attach(chunkMaterial);
+  dayNight.attach(waterMaterial);
   const meshes = new ChunkMeshManager(scene, world, chunkMaterial, waterMaterial);
   // Streaming loader: spiral queue around the player, worker pool, ≤2 uploads/frame, unload beyond rd+2.
   const loader = new ChunkLoader(world, meshes, seed, meshes.mesher.options, renderDistance);
@@ -227,7 +236,7 @@ export async function bootstrap(): Promise<GameHandle> {
       : 'Target: none';
   });
   debug.addLine(() => `Hand: ${interaction.selectedBlock} (${hotbar.selectedIndex + 1})  Textures: ${gfx.info.memory.textures}`);
-  debug.addLine(() => `AO: ${meshes.mesher.options.ao ? 'on' : 'off'} [F4]  Shading: ${meshes.mesher.options.shading ? 'on' : 'off'} [F6]`);
+  debug.addLine(() => `AO: ${meshes.mesher.options.ao ? 'on' : 'off'} [F4]  Shading: ${meshes.mesher.options.shading ? 'on' : 'off'} [F6]  Time: ${dayNight.clock}  daylight: ${dayNight.daylight.toFixed(2)}${dayNight.fixed ? ' (fixed)' : dayNight.paused ? ' (paused)' : ''}`);
   debug.addLine(() => {
     if (!storage.available) return 'Save: unavailable';
     const ago = save.lastSavedAt > 0 ? `${((performance.now() - save.lastSavedAt) / 1000).toFixed(0)}s ago` : 'never';
@@ -254,6 +263,10 @@ export async function bootstrap(): Promise<GameHandle> {
   const loop = new Loop();
   loop.onUpdate((dt) => {
     debug.beginFrame();
+    dayNight.paused = !input.active; // menu open → time stands still
+    dayNight.update(dt);
+    skyColor.copy(dayNight.skyColor);
+    fog.color.copy(dayNight.skyColor);
     fps.update();
     player.update(dt, fps.yaw);
     fps.setEyePosition(player.getEyePosition(eye));
@@ -278,7 +291,7 @@ export async function bootstrap(): Promise<GameHandle> {
   });
   loop.start();
 
-  return { input, camera: fps, player, interaction, world, hotbar, save, loader, meshes, storage, seed, restored: restoring, loop, frames: () => frameCount };
+  return { input, camera: fps, player, interaction, world, hotbar, save, loader, meshes, dayNight, storage, seed, restored: restoring, loop, frames: () => frameCount };
 }
 
 if (!import.meta.env.SSR) {
