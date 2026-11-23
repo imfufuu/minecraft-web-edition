@@ -24,6 +24,7 @@ export class PauseOverlay {
         <div class="pause-actions">
           <button type="button" class="pause-btn act-save">立即保存</button>
           <button type="button" class="pause-btn act-new">新建世界</button>
+          <button type="button" class="pause-btn act-fullscreen">全屏 / Fullscreen</button>
           <span class="save-info"></span>
         </div>
         <div class="pause-settings">
@@ -58,6 +59,19 @@ export class PauseOverlay {
     fresh.addEventListener('click', (e) => {
       e.stopPropagation();
       if (window.confirm('确定要放弃当前世界并生成一个新的随机世界吗？\nDiscard this world and create a new one?')) opts.onNewWorld();
+    });
+  }
+
+  /** Wire the fullscreen button; hides it when the platform has no Fullscreen API (e.g. iPhone Safari). */
+  bindFullscreen(supported: boolean, onToggle: () => void): void {
+    const btn = this.el.querySelector<HTMLButtonElement>('.act-fullscreen') as HTMLButtonElement;
+    if (!supported) {
+      btn.remove();
+      return;
+    }
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onToggle();
     });
   }
 

@@ -32,6 +32,9 @@ const BRICK: RGB = [152, 72, 56];
 const MORTAR: RGB = [176, 170, 162];
 const WATER: RGB = [52, 96, 212];
 const WATER_LIGHT: RGB = [84, 132, 232];
+const SNOW: RGB = [241, 245, 250];
+const CACTUS: RGB = [68, 124, 48];
+const CACTUS_DARK: RGB = [44, 86, 32];
 
 /** Pixel painter for one tile: (x, y) in [0, 16) with y = 0 at the TOP of the tile. */
 type Painter = (x: number, y: number, rnd: Rnd) => RGB;
@@ -88,6 +91,17 @@ const painters: Record<Tile, Painter> = {
     // Soft diagonal ripples; alpha is applied by the material, not the texture.
     const ripple = Math.sin((x + y * 0.5) * 0.9 + rnd(0, Math.floor(y / 4), 6) * 2) > 0.55;
     return vary(ripple ? WATER_LIGHT : WATER, 8, rnd(x, y));
+  },
+  [Tile.SNOW]: (x, y, rnd) => vary(SNOW, 7, rnd(x, y)),
+  [Tile.CACTUS_SIDE]: (x, y, rnd) => {
+    // Vertical ribs every 4 px with a darker groove; 1 px dark border left/right.
+    const rib = x % 4 === 1;
+    const edge = x === 0 || x === 15;
+    return vary(rib || edge ? CACTUS_DARK : CACTUS, 10, rnd(x, y));
+  },
+  [Tile.CACTUS_TOP]: (x, y, rnd) => {
+    const edge = x === 0 || x === 15 || y === 0 || y === 15;
+    return vary(edge ? CACTUS_DARK : CACTUS, 8, rnd(x, y));
   },
 };
 

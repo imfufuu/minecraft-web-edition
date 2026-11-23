@@ -7,6 +7,22 @@ body {
   overflow: hidden;
   background: #000;
   font-family: 'Courier New', Courier, monospace;
+  /* Touch hygiene: no selection, no long-press callout, no browser gestures, no overscroll. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+/* Form controls in the menu stay usable. */
+input,
+select,
+textarea {
+  user-select: auto;
+  -webkit-user-select: auto;
+  touch-action: auto;
 }
 
 #app {
@@ -18,6 +34,31 @@ body {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+/* Fullscreen toggle: top-right, visible with the touch HUD. */
+.fullscreen-btn {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top));
+  right: calc(8px + env(safe-area-inset-right));
+  z-index: 60;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: 20px;
+  line-height: 44px;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.fullscreen-btn.hidden {
+  display: none;
 }
 
 .debug-overlay {
