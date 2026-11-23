@@ -17,10 +17,10 @@ P11 — 可选进阶特性（树木 → 水面 → 昼夜）
 | P8 | 顶点光照与环境光遮蔽(AO) | done | yes | 无灯光 MeshBasicMaterial；AO 值手算全对（1.0/.82/.65/.45）；镜像对称；24 三角形 CCW | F4 AO / F6 明暗 开关 |
 | P9 | IndexedDB 增量存档与恢复 | done | yes | 放置/破坏→flush→重新 bootstrap：方块/位置/热栏/模式全部恢复；save 1.3 ms；clearAll 后为新世界 | 存档仅含 diff，不存整区块 |
 | P10 | Web Worker 多线程与视距卸载 | done | yes | rd=7 → 177 区块；Worker 内生成+网格 ≈5.5 ms/块；主线程 ≤2 上传/帧；远离后 69/69 网格全部 dispose；Worker 输出与主线程逐字节一致 | Worker 包 7.9 kB，不含 three |
-| P11 | 可选进阶特性 | in-progress | no | - | 顺序：树木 → 水面 → 昼夜 |
+| P11 | 可选进阶特性 | in-progress | no | 树木 ✓：13×13 区块 142 棵（1/305 列），间距 ≥3，跨区块树冠无缝，Worker 与主线程逐字节一致，生成 0.17 ms/块 | 顺序：树木 ✓ → 水面 → 昼夜 |
 
 ## 当前任务
-P11-a 树木：`world/Structures.ts` 用 `hash2D(seed, wx, wz)` 决定每列是否为树心（概率约 1/180，仅草地且 h>SEA_LEVEL+1），树形确定性（干 4–6 格 OakLog + 半径 2 球冠 Leaves）；生成写入 padded 体积时需考虑邻近 2 格内其他区块的树冠（在 padded 生成阶段对 [-3,18] 范围的树心做结构叠加，保证跨区块树冠无缝且与加载顺序无关）；主线程 `TerrainGenerator.generate` 与 padded 路径共用同一结构函数，保持逐字节一致。
+P11-b 水面：`TerrainGenerator.fillColumn` 在 h < SEA_LEVEL 的列把 (h, SEA_LEVEL] 填为 `WATER`（新 BlockId 11，`isSolid=false`、不参与碰撞、可穿行）；mesher 拆成两组缓冲：不透明组照旧，水面组仅输出朝上的顶面（y=SEA_LEVEL）并略下沉 0.1；`ChunkMeshManager` 每区块最多 2 个 Mesh（第二个用 `transparent: true, opacity 0.6, depthWrite false` 的材质），DrawCalls 上限 = 2×区块数；相邻水块之间不出面；Worker 协议增加 water 缓冲。
 
 ## 阻塞项与风险
 无。
@@ -124,3 +124,5 @@ src/
 - [2026-11-22 / P10] 为了让 Worker 包不含 three（7.9 kB vs 115 kB），把 `getTileUV`/图集常量拆到 `AtlasLayout.ts`，`toGeometry` 移到 `ChunkMeshManager.buffersToGeometry`；`ChunkMesher` 现在零 three 依赖。
 - [2026-11-22 / P10] 验证：padded 内核与 `TerrainGenerator.generate` 逐字节一致（含负坐标）；Worker 流水线输出（data/positions/indices/colors/uvs/normals）与主线程 mesher 逐字节一致（3 块 2164 面）；邻块 diff 缺失时恰好少 1 个边界面（证明 diff 传递必要且生效）；rd=4 流式加载 69/69，远离后 69 网格全部 dispose、面计数归零，返回后被编辑区块通过 builder 重新叠加 diff；60 步行走峰值 71 块（上限 169）。打包后的 worker 在 Node 中独立运行 20 块：平均 5.5 ms/块，Transferable 6 个缓冲。
 - [2026-11-22 / P10] 生存模式下脚下区块未加载时物理暂停（`Player.groundReady`），避免穿透未加载地形；出生/读档所在区块在 bootstrap 内同步构建（≈3 ms）。`?rd=N` (2–12) 可调视距。
+- [2026-11-22 / P11-a] 树木放置为纯函数 `(seed, wx, wz) → Tree|null`：候选 hash < 1/180，再检查 5×5 邻域内无更小 hash 的候选（天然间距 ≥3，且无需任何状态）；只在候选命中时才调 `heightAt`，因此每区块额外成本仅 400 次整数 hash（实测 padded 生成含树 0.17 ms）。`stamp()` 扫描缓冲外扩 2 格的树心，使得跨区块树冠在 16×16 与 18×18 两种缓冲下都完整，与加载顺序无关。叶子只填 AIR，树干最后写入覆盖叶子。
+- [2026-11-22 / P11-a] 验证：13×13 区块 142 棵树（干高 4/5/6 = 55/40/47），最小间距 3，全部站在海滩线以上的草地、顶部 2 层叶冠、上方留空；31 棵跨 x 边界的树远侧树冠全部存在；单独生成/世界生成/padded 内核三者逐字节一致；同种子二次生成 169 块一致、不同种子布局不同；Worker vs 主线程网格一致（2478 面）。出生点若落在树干内自动上爬到空列。
