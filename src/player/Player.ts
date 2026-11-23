@@ -37,6 +37,11 @@ export class Player {
 
   private readonly input: InputManager;
   private readonly world: BlockSource;
+  /**
+   * Streaming hook: returns false while the column under (x, z) has no loaded chunk yet.
+   * Survival physics pauses in that case instead of falling through unloaded terrain.
+   */
+  groundReady: (x: number, z: number) => boolean = () => true;
   private toggleLatch = false;
   private readonly forward = new THREE.Vector3();
   private readonly right = new THREE.Vector3();
@@ -81,7 +86,8 @@ export class Player {
     this.computeWishDirection(yaw);
 
     if (this.mode === 'fly') this.updateFly(dt);
-    else this.updateSurvival(dt);
+    else if (this.groundReady(this.position.x, this.position.z)) this.updateSurvival(dt);
+    else this.velocity.set(0, 0, 0); // waiting for the chunk below to stream in
 
     if (this.position.y < VOID_Y) this.respawn();
   }

@@ -17,6 +17,8 @@ export class World {
   readonly modifiedBlocks = new Map<string, ChunkDiff>();
   /** Chunk keys whose diff changed since the last save. */
   readonly unsavedDiffs = new Set<string>();
+  /** Incremented on every successful setBlock (lets async builders detect stale input). */
+  editVersion = 0;
 
   constructor(generator: TerrainGenerator) {
     this.generator = generator;
@@ -73,6 +75,7 @@ export class World {
     }
     diff.set(chunkIndex(lx, ly, lz), id);
     this.unsavedDiffs.add(key);
+    this.editVersion++;
 
     if (lx === 0) this.markDirty(cx - 1, cz);
     else if (lx === CHUNK_SIZE - 1) this.markDirty(cx + 1, cz);
@@ -96,6 +99,16 @@ export class World {
     this.markDirty(chunk.cx + 1, chunk.cz);
     this.markDirty(chunk.cx, chunk.cz - 1);
     this.markDirty(chunk.cx, chunk.cz + 1);
+  }
+
+  /** True if any of the 4 edge-neighbours of (cx, cz) has recorded edits. */
+  neighbourHasDiff(cx: number, cz: number): boolean {
+    return (
+      this.modifiedBlocks.has(Chunk.keyOf(cx - 1, cz)) ||
+      this.modifiedBlocks.has(Chunk.keyOf(cx + 1, cz)) ||
+      this.modifiedBlocks.has(Chunk.keyOf(cx, cz - 1)) ||
+      this.modifiedBlocks.has(Chunk.keyOf(cx, cz + 1))
+    );
   }
 
   private markDirty(cx: number, cz: number): void {
