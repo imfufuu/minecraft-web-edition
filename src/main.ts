@@ -15,14 +15,27 @@ import { installGlobalErrorHandlers, showError } from './ui/ErrorBar';
 import { TouchControls } from './ui/TouchControls';
 import { Hotbar } from './ui/Hotbar';
 import { TextureAtlas } from './mesh/TextureAtlas';
+import { WorldStorage, type WorldMeta } from './world/WorldStorage';
+import { SaveManager } from './core/SaveManager';
+import { hashSeed } from './utils/prng';
 
 const SKY_COLOR = 0x87ceeb;
 const DEFAULT_SEED = 'minecraft-web';
 const WORLD_RADIUS = 2; // [-2, 2] -> 5×5 chunks
 
-function resolveSeed(): string {
+function urlSeed(): string | null {
   const param = new URLSearchParams(window.location.search).get('seed');
-  return param && param.length > 0 ? param : DEFAULT_SEED;
+  return param && param.length > 0 ? param : null;
+}
+
+/** Seed priority: URL ?seed= > saved world > default. */
+function resolveSeed(saved: WorldMeta | null): string {
+  return urlSeed() ?? saved?.seed ?? DEFAULT_SEED;
+}
+
+/** Deterministic-but-fresh seed for "new world" (time-based, hashed to a short token). */
+function freshSeed(): string {
+  return hashSeed(`${Date.now()}-${performance.now()}`).toString(36);
 }
 
 /** Handle exposed on `window.__mwe` for debugging / automated tests. */
@@ -33,6 +46,10 @@ export interface GameHandle {
   interaction: BlockInteraction;
   world: World;
   hotbar: Hotbar;
+  save: SaveManager;
+  storage: WorldStorage;
+  seed: string;
+  restored: boolean;
   loop: Loop;
   frames: () => number;
 }
@@ -43,7 +60,7 @@ declare global {
   }
 }
 
-export function bootstrap(): GameHandle {
+export async function bootstrap(): Promise<GameHandle> {
   const container = document.getElementById('app');
   if (!container) throw new Error('#app container not found');
 
@@ -54,9 +71,20 @@ export function bootstrap(): GameHandle {
   scene.background = new THREE.Color(SKY_COLOR);
   scene.fog = new THREE.Fog(SKY_COLOR, 60, 160);
 
-  // --- World: seeded terrain, 5×5 chunks ---
-  const seed = resolveSeed();
+  // --- Persistence: open DB, read meta, decide seed ---
+  const storage = new WorldStorage();
+  await storage.open();
+  const savedMeta = await storage.loadMeta();
+  const seed = resolveSeed(savedMeta);
+  const restoring = savedMeta !== null && savedMeta.seed === seed;
+
+  // --- World: seeded terrain, 5×5 chunks (+ saved diffs) ---
   const world = new World(new TerrainGenerator(seed));
+  if (restoring) {
+    for (const [key, diff] of await storage.loadAllDiffs()) world.applyDiff(key, diff);
+  } else if (savedMeta !== null) {
+    await storage.clearAll(); // different seed requested: the old save no longer applies
+  }
   const t0 = performance.now();
   world.generateArea(-WORLD_RADIUS, WORLD_RADIUS);
   const genMs = performance.now() - t0;
@@ -76,6 +104,12 @@ export function bootstrap(): GameHandle {
   const player = new Player(input, world);
   player.setSpawn(0.5, world.generator.heightAt(0, 0) + 1, 0.5);
   fps.setLook(Math.PI * 0.75, -0.15);
+  if (restoring && savedMeta) {
+    const p = savedMeta.player;
+    player.position.set(p.x, p.y, p.z);
+    player.mode = p.mode;
+    fps.setLook(p.yaw, p.pitch);
+  }
   const eye = new THREE.Vector3();
   const interaction = new BlockInteraction(world, player, camera, input, scene);
 
@@ -107,6 +141,36 @@ export function bootstrap(): GameHandle {
   hotbar.onSelect((id) => {
     interaction.selectedBlock = id;
   });
+  if (restoring && savedMeta) hotbar.select(Math.max(0, Math.min(8, savedMeta.player.hotbarIndex | 0)));
+
+  // --- Save manager ---
+  const save = new SaveManager(storage, world, seed, () => ({
+    x: player.position.x,
+    y: player.position.y,
+    z: player.position.z,
+    yaw: fps.yaw,
+    pitch: fps.pitch,
+    mode: player.mode,
+    hotbarIndex: hotbar.selectedIndex,
+  }));
+  pause.bindActions({
+    onSave: () => {
+      void save.flush().then(() => pause.setSaveInfo(`已保存 ${new Date().toLocaleTimeString()}`));
+    },
+    onNewWorld: () => {
+      void (async () => {
+        await storage.clearAll();
+        await storage.saveMeta({
+          seed: freshSeed(),
+          player: { x: 0.5, y: 0, z: 0.5, yaw: 0, pitch: 0, mode: 'survival', hotbarIndex: 0 },
+          savedAt: Date.now(),
+        });
+        // Drop any ?seed= so the fresh seed from storage wins.
+        window.location.href = window.location.pathname;
+      })();
+    },
+  });
+  pause.setSaveInfo(storage.available ? (restoring ? `已读取存档 (${world.modifiedBlocks.size} 个区块有修改)` : '新世界') : '此浏览器不支持 IndexedDB，无法存档');
   pause.bindSettings({
     sensitivity: input.settings.lookSensitivity,
     touchControls: input.touchControlsEnabled,
@@ -131,6 +195,11 @@ export function bootstrap(): GameHandle {
   });
   debug.addLine(() => `Hand: ${interaction.selectedBlock} (${hotbar.selectedIndex + 1})  Textures: ${gfx.info.memory.textures}`);
   debug.addLine(() => `AO: ${meshes.mesher.options.ao ? 'on' : 'off'} [F4]  Shading: ${meshes.mesher.options.shading ? 'on' : 'off'} [F6]`);
+  debug.addLine(() => {
+    if (!storage.available) return 'Save: unavailable';
+    const ago = save.lastSavedAt > 0 ? `${((performance.now() - save.lastSavedAt) / 1000).toFixed(0)}s ago` : 'never';
+    return `Save: ${ago} (${save.lastSaveMs.toFixed(1)} ms)  modified chunks: ${world.modifiedBlocks.size}  unsaved: ${world.unsavedDiffs.size}`;
+  });
   input.onKeyPress((code) => {
     if (code === 'F4') {
       meshes.mesher.options.ao = !meshes.mesher.options.ao;
@@ -157,6 +226,7 @@ export function bootstrap(): GameHandle {
     interaction.update(performance.now());
     touchControls.setFlyMode(player.mode === 'fly');
     hotbar.update();
+    save.update(performance.now());
     meshes.rebuildDirty();
   });
   loop.onRender(() => {
@@ -171,14 +241,16 @@ export function bootstrap(): GameHandle {
   });
   loop.start();
 
-  return { input, camera: fps, player, interaction, world, hotbar, loop, frames: () => frameCount };
+  return { input, camera: fps, player, interaction, world, hotbar, save, storage, seed, restored: restoring, loop, frames: () => frameCount };
 }
 
 if (!import.meta.env.SSR) {
   installGlobalErrorHandlers();
-  try {
-    window.__mwe = bootstrap();
-  } catch (err) {
-    showError(err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err));
-  }
+  bootstrap()
+    .then((game) => {
+      window.__mwe = game;
+    })
+    .catch((err: unknown) => {
+      showError(err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err));
+    });
 }
