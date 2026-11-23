@@ -52,7 +52,8 @@ src/
 ├── world/
 │   ├── Chunk.ts            # CHUNK_SIZE=16 / CHUNK_HEIGHT=64，Uint8Array(16384)，chunkIndex，越界读返回 AIR，dirty 标记
 │   ├── TerrainGenerator.ts # 种子 -> SimplexNoise2D；heightAt(wx,wz)=24+fbm×14；草/土3层/石/基岩
-│   └── World.ts            # Map<"cx,cz", Chunk>，getOrCreateChunk，getBlock/setBlock；边界修改连带标记邻区块 dirty
+│   ├── World.ts            # Map<"cx,cz", Chunk>，getOrCreateChunk(叠加 diff)，getBlock/setBlock(记录 modifiedBlocks)，applyDiff；边界修改连带标记邻区块 dirty
+│   └── WorldStorage.ts     # IndexedDB MinecraftWebDB v1：meta(seed, player) + chunk_diffs(Uint16 index / Uint8 id)；无 IDB 时 no-op
 ├── utils/
 │   ├── prng.ts             # mulberry32 createPRNG、hashSeed(string|number)、hash2D
 │   ├── noise.ts            # 手写确定性 2D Simplex（PRNG 洗牌置换表）+ fbm(octaves, lacunarity, persistence)
