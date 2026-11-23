@@ -12,6 +12,7 @@ import { worldToChunkCoords } from './utils/math';
 import { Player } from './player/Player';
 import { BlockInteraction } from './player/BlockInteraction';
 import { installGlobalErrorHandlers, showError } from './ui/ErrorBar';
+import { TouchControls } from './ui/TouchControls';
 
 const SKY_COLOR = 0x87ceeb;
 const DEFAULT_SEED = 'minecraft-web';
@@ -90,7 +91,7 @@ export function bootstrap(): GameHandle {
   );
   const modeBadge = document.createElement('div');
   modeBadge.className = 'mode-badge hidden';
-  modeBadge.textContent = '拖拽环顾模式 · ESC 返回菜单 / Drag to look · ESC for menu';
+  modeBadge.textContent = '拖拽环顾 · ☰ 菜单';
   document.body.appendChild(modeBadge);
   input.onModeChanged((mode) => {
     pause.setVisible(mode === 'none');
@@ -100,6 +101,20 @@ export function bootstrap(): GameHandle {
     }
   });
   const debug = new DebugOverlay();
+  const touchControls = new TouchControls(input, () => debug.toggle());
+  pause.bindSettings({
+    sensitivity: input.settings.lookSensitivity,
+    touchControls: input.touchControlsEnabled,
+    onSensitivity: (v) => {
+      input.settings.lookSensitivity = v;
+      input.saveSettings();
+    },
+    onTouchControls: (v) => {
+      input.settings.touchControls = v;
+      input.saveSettings();
+    },
+  });
+  input.onModeChanged((mode) => touchControls.setVisible(mode !== 'none' && input.touchControlsEnabled));
   debug.addLine(() => `Yaw: ${THREE.MathUtils.radToDeg(fps.yaw).toFixed(1)}°  Pitch: ${THREE.MathUtils.radToDeg(fps.pitch).toFixed(1)}°  Input: ${input.captureMode}`);
   debug.addLine(() => `Seed: ${seed}  Chunks: ${world.chunks.size}  Meshes: ${meshes.meshes.size}  Faces: ${meshes.totalFaces}`);
   debug.addLine(() => `Gen: ${genMs.toFixed(1)} ms  Mesh: ${meshMs.toFixed(1)} ms`);
@@ -124,6 +139,7 @@ export function bootstrap(): GameHandle {
     fps.setEyePosition(player.getEyePosition(eye));
     camera.updateMatrixWorld();
     interaction.update(performance.now());
+    touchControls.setFlyMode(player.mode === 'fly');
     meshes.rebuildDirty();
   });
   loop.onRender(() => {
