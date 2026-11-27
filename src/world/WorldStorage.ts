@@ -119,6 +119,8 @@ export class WorldStorage {
       const record: DiffRecord = { key, indices, ids };
       store.put(record);
     }
+    // Await completion: SaveManager deletes the matching unsavedDiffs entries only
+    // after this resolves, so "saved" must mean the diffs actually hit disk.
     await txDone(tx);
   }
 
@@ -129,11 +131,6 @@ export class WorldStorage {
     tx.objectStore(META_STORE).clear();
     tx.objectStore(DIFF_STORE).clear();
     await txDone(tx);
-  }
-
-  close(): void {
-    this.db?.close();
-    this.db = null;
   }
 }
 

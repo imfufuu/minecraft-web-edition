@@ -285,11 +285,6 @@ export class InputManager {
     this.setMode('none');
   }
 
-  /** Backwards-compatible alias. */
-  exitLock(): void {
-    this.release();
-  }
-
   isDown(code: string): boolean {
     return this.keys.has(code) || this.virtualKeys.has(code);
   }
@@ -356,11 +351,6 @@ export class InputManager {
 
   onModeChanged(fn: (mode: CaptureMode) => void): void {
     this.modeListeners.push(fn);
-  }
-
-  /** Backwards-compatible: fires with `active` whenever the mode changes. */
-  onLockChanged(fn: (active: boolean) => void): void {
-    this.modeListeners.push((mode) => fn(mode !== 'none'));
   }
 
   onClick(fn: (button: number) => void): void {

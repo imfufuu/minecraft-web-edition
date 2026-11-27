@@ -55,9 +55,4 @@ export class Chunk {
     this.dirty = true;
     return true;
   }
-
-  isEmpty(): boolean {
-    for (let i = 0; i < this.data.length; i++) if (this.data[i] !== BlockId.AIR) return false;
-    return true;
-  }
 }

@@ -115,13 +115,4 @@ export class World {
     const c = this.chunks.get(Chunk.keyOf(cx, cz));
     if (c) c.dirty = true;
   }
-
-  /** Generate every chunk in the inclusive square [minC, maxC]². */
-  generateArea(minC: number, maxC: number): void {
-    for (let cz = minC; cz <= maxC; cz++) {
-      for (let cx = minC; cx <= maxC; cx++) {
-        this.getOrCreateChunk(cx, cz);
-      }
-    }
-  }
 }

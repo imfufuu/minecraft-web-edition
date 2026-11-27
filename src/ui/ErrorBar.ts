@@ -17,7 +17,9 @@ export function showError(message: string): void {
 /** Hook window-level error events once. */
 export function installGlobalErrorHandlers(): void {
   window.addEventListener('error', (e) => {
-    showError(`Error: ${e.message} (${e.filename.split('/').pop() ?? ''}:${e.lineno})`);
+    // `filename` can be empty/undefined on error events without a location — guard it,
+    // otherwise this handler itself throws and the bar never shows anything.
+    showError(`Error: ${e.message} (${e.filename?.split('/').pop() ?? ''}:${e.lineno})`);
   });
   window.addEventListener('unhandledrejection', (e) => {
     const r: unknown = e.reason;

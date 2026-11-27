@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0",
+    "test": "pnpm smoke",
     "smoke": "vite build --config test/headless/vite.config.ts && node test/headless/run.mjs lock-ok && node test/headless/run.mjs lock-error && node test/headless/run.mjs lock-silent"
   },
   "dependencies": {
