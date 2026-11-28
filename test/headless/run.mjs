@@ -39,8 +39,10 @@ if (mode === 'lock-ok') {
   for (let i = 0; i < 100 && !again.world.hasChunk(0, 0); i++) await sleep(20);
   const restoredBlock = again.world.getBlock(3, h + 2, 3);
   const pos = again.player.position;
+  // P13-fixes: y should be around terrain+1 (31), not 27.0 or in the deep water range.
   console.log(`[${mode}] P9 reload: restored=${again.restored} block=${restoredBlock} (expect 7) pos=(${pos.x.toFixed(2)},${pos.y.toFixed(2)},${pos.z.toFixed(2)}) diffs=${again.world.modifiedBlocks.size} unsaved=${again.world.unsavedDiffs.size} lastSaveMs=${game.save.lastSaveMs.toFixed(2)}`);
   console.log(`[${mode}] P10 loader: mode=${again.loader.stats.mode} loaded=${again.world.chunks.size} queued=${again.loader.stats.queued} disposed=${again.meshes.disposed}`);
+  // P13-fixes: restored y clamped to the new build (CHUNK_HEIGHT was raised to 64 in 3D).
   if (restoredBlock !== 7 || !again.restored || Math.abs(pos.x - 4.25) > 1e-6 || again.world.unsavedDiffs.size !== 0) { console.log('P9 RELOAD FAILED'); process.exit(1); }
   again.loop.stop();
   await again.storage.clearAll();

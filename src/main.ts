@@ -148,7 +148,7 @@ export async function bootstrap(): Promise<GameHandle> {
     for (let y = py; y >= 0; y--) {
       if (world.getBlock(0, y, 0) !== BlockId.AIR) { finalY = y + 0.5; break; }
     }
-    player.position.set(0.5, Math.max(finalY, 0.5), 0.5);
+    player.position.set(0.5, finalY, 0.5);
     player.mode = p.mode;
     fps.setLook(p.yaw, p.pitch);
   }
