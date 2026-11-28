@@ -29,10 +29,25 @@ import { hashSeed } from './utils/prng';
 const SKY_COLOR = 0x87ceeb;
 const DEFAULT_SEED = 'minecraft-web';
 
+/**
+ * SemVer string of the deployed build (read via `import.meta.env.VITE_APP_VERSION`).
+ * Allows debugging deployed artifacts (e.g. devtools console: `window.__mwe?.version`).
+ */
+export const VERSION: string = import.meta.env.VITE_APP_VERSION ?? '0.1.0-dev+unknown';
+
+/** Version of the running build, exposed on window for quick console checks (`window.__mweVersion`). */
+(window as unknown as { __mweVersion?: string }).__mweVersion = VERSION;
+
 function urlSeed(): string | null {
   const param = new URLSearchParams(window.location.search).get('seed');
   return param && param.length > 0 ? param : null;
 }
+
+/** Debug helper: alert the current build version + branch. */
+export function versionInfo(): string {
+  return `${VERSION} · sha=${import.meta.env.VITE_BUILD_SHA ?? 'unknown'} · branch=${import.meta.env.VITE_GIT_BRANCH ?? 'unknown'}`;
+}
+void versionInfo;
 
 /** Seed priority: URL ?seed= > saved world > default. */
 function resolveSeed(saved: WorldMeta | null): string {
@@ -60,6 +75,9 @@ export interface GameHandle {
   clouds: Clouds;
   storage: WorldStorage;
   seed: string;
+  /** Deployed build version (SemVer). Useful when debugging the Pages artifact. */
+  version: string;
+  versionInfo: () => string;
   restored: boolean;
   loop: Loop;
   frames: () => number;
@@ -332,7 +350,7 @@ export async function bootstrap(): Promise<GameHandle> {
   });
   loop.start();
 
-  return { input, camera: fps, player, interaction, world, hotbar, save, loader, meshes, dayNight, sky, clouds, storage, seed, restored: restoring, loop, frames: () => frameCount };
+  return { input, camera: fps, player, interaction, world, hotbar, save, loader, meshes, dayNight, sky, clouds, storage, seed, version: VERSION, versionInfo, restored: restoring, loop, frames: () => frameCount };
 }
 
 if (!import.meta.env.SSR) {
