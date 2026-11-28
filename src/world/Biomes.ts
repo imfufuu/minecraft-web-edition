@@ -10,6 +10,10 @@ export const Biome = {
   SAVANNA: 5,
   SNOWY: 6,
   MOUNTAINS: 7,
+  JUNGLE: 8,
+  SWAMP: 9,
+  BADLANDS: 10,
+  ISLAND: 11,
 } as const;
 export type Biome = (typeof Biome)[keyof typeof Biome];
 
@@ -46,6 +50,11 @@ export const BIOMES: readonly BiomeDef[] = [
   def(Biome.SAVANNA, 'Savanna', BlockId.GRASS, BlockId.DIRT, 1 / 700),
   def(Biome.SNOWY, 'Snowy Tundra', BlockId.SNOW, BlockId.DIRT, 1 / 260),
   def(Biome.MOUNTAINS, 'Mountains', BlockId.STONE, BlockId.STONE, 1 / 320, 0, 0),
+  // P12: new biomes — tree-heavy jungle, swamp (茂密树木), badlands plateaus (裸岩/垂壁), beach islands (海岛沙滩分层).
+  def(Biome.JUNGLE, 'Jungle', BlockId.GRASS, BlockId.DIRT, 1 / 60),
+  def(Biome.SWAMP, 'Swamp', BlockId.GRASS, BlockId.DIRT, 1 / 25),
+  def(Biome.BADLANDS, 'Badlands', BlockId.GRASS, BlockId.STONE, 0, 0, 2),
+  def(Biome.ISLAND, 'Island', BlockId.GRASS, BlockId.SAND, 0, 0, 2),
 ];
 
 /** Largest tree chance of any biome — cheap pre-filter before the climate lookup. */

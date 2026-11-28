@@ -16,6 +16,10 @@ const OCTAVES = 3;
 const MOUNTAIN_LIFT = 10;
 const MOUNTAIN_AMPLITUDE = 22;
 const MAX_HEIGHT = 60;
+/** P12: islands are columns peeking out of the sea — h in (SEA_LEVEL+1, ISLAND_MAX_HEIGHT]. */
+const ISLAND_MAX_HEIGHT = 34;
+/** P12: badlands start once terrain reaches this height. */
+const BADLANDS_MIN_HEIGHT = 52;
 const CLIMATE_SCALE = 1 / 300;
 const RUGGED_SCALE = 1 / 220;
 
@@ -69,11 +73,15 @@ export class TerrainGenerator {
     const humidity = 0.5 + 0.5 * this.humidNoise.fbm(wx * CLIMATE_SCALE, wz * CLIMATE_SCALE, 2);
     let biome: Biome;
     if (h < SEA_LEVEL - 1) biome = Biome.OCEAN;
+    else if (h > SEA_LEVEL + 1 && h <= ISLAND_MAX_HEIGHT) biome = Biome.ISLAND; // P12: islands peek out of the sea
     else if (h <= SEA_LEVEL + 1) biome = Biome.BEACH;
     else if (mountain > 0.5) biome = Biome.MOUNTAINS;
     else if (temperature < 0.32) biome = Biome.SNOWY;
     else if (temperature > 0.66 && humidity < 0.42) biome = Biome.DESERT;
     else if (temperature > 0.66) biome = Biome.SAVANNA;
+    else if (humidity > 0.8) biome = Biome.JUNGLE; // P12: very humid, warm-ish
+    else if (humidity > 0.6) biome = Biome.SWAMP; // P12
+    else if (h >= BADLANDS_MIN_HEIGHT) biome = Biome.BADLANDS; // P12: high plateaus
     else if (humidity > 0.58) biome = Biome.FOREST;
     else biome = Biome.PLAINS;
     return { h, biome: BIOMES[biome], temperature, humidity, mountain };
