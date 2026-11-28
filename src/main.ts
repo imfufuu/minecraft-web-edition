@@ -136,11 +136,19 @@ export async function bootstrap(): Promise<GameHandle> {
     const c = worldToChunkCoords(x, 0, z);
     return world.hasChunk(c.cx, c.cz);
   };
-  player.setSpawn(0.5, world.generator.heightAt(0, 0) + 1, 0.5);
+  player.setSpawn(0.5, world.generator.heightAt(0, 0, { ready: world.readyAlways }) + 1, 0.5);
   fps.setLook(Math.PI * 0.75, -0.15);
   if (restoring && savedMeta) {
     const p = savedMeta.player;
-    player.position.set(p.x, p.y, p.z);
+    // P13-fixes: clamp restored y to this build's CHUNK_HEIGHT (underground-vanish bug: older builds
+    // were 2D with CHUNK_HEIGHT 32 and different water placement). If the column has a ground block
+    // below y, put the player there; otherwise leave at terrain height + 1 so water is still below.
+    const py = Math.min(p.y, CHUNK_HEIGHT - 3);
+    let finalY = py;
+    for (let y = py; y >= 0; y--) {
+      if (world.getBlock(0, y, 0) !== BlockId.AIR) { finalY = y + 0.5; break; }
+    }
+    player.position.set(0.5, Math.max(finalY, 0.5), 0.5);
     player.mode = p.mode;
     fps.setLook(p.yaw, p.pitch);
   }

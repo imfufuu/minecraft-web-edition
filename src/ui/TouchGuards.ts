@@ -5,13 +5,26 @@
  */
 export function installTouchGuards(root: Document = document): () => void {
   const isFormControl = (t: EventTarget | null): boolean => t instanceof HTMLElement && !!t.closest('input, select, textarea, button, a, label');
-  const block = (e: Event): void => {
-    if (isFormControl(e.target)) return;
-    e.preventDefault();
+  // Two uses: browser default prevention AND touch-pad trigger for pause-on-tap (P13-fixes).
+  const prevent = (e: Event): void => {
+    if (!isFormControl(e.target)) e.preventDefault();
   };
-  const blockAlways = (e: Event): void => e.preventDefault();
+
+  // Tap up to FOUR corners = pause (P13-fixes) so the pause menu is reachable on touch;
+  // other taps fall through to the normal click flow (place / dig).
+  const onTouchend = (e: TouchEvent): void => {
+    const t = e.changedTouches[0];
+    if (t && t.clientX < 30 && t.clientY < 30) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('mwe:tap-pause'));
+    }
+    prevent(e);
+  };
 
   // Long-press context menu (also covers iOS callout on the canvas) and text selection.
+  const block = prevent;
+  const blockAlways = (e: Event): void => e.preventDefault();
+
   root.addEventListener('contextmenu', block);
   root.addEventListener('selectstart', block);
   root.addEventListener('dragstart', block);
@@ -25,13 +38,7 @@ export function installTouchGuards(root: Document = document): () => void {
     e.preventDefault();
   };
   root.addEventListener('touchmove', touchMove, { passive: false });
-  let lastTouchEnd = 0;
-  const touchEnd = (e: TouchEvent): void => {
-    const now = performance.now();
-    if (now - lastTouchEnd < 320 && !isFormControl(e.target)) e.preventDefault(); // double-tap zoom
-    lastTouchEnd = now;
-  };
-  root.addEventListener('touchend', touchEnd, { passive: false });
+  root.addEventListener('touchend', onTouchend, { passive: false });
   root.addEventListener('dblclick', block);
 
   return () => {
@@ -42,7 +49,7 @@ export function installTouchGuards(root: Document = document): () => void {
     root.removeEventListener('gesturechange', blockAlways);
     root.removeEventListener('gestureend', blockAlways);
     root.removeEventListener('touchmove', touchMove);
-    root.removeEventListener('touchend', touchEnd);
+    root.removeEventListener('touchend', onTouchend);
     root.removeEventListener('dblclick', block);
   };
 }

@@ -60,8 +60,24 @@ export class TerrainGenerator {
     return Math.max(1, Math.min(MAX_HEIGHT, h));
   }
 
-  /** Surface height (y of the top-most solid block) at an absolute world column. */
-  heightAt(wx: number, wz: number): number {
+  /**
+   * Surface height (y of the top-most solid block) at an absolute world column.
+   *
+   * 3D-mode aware: while a chunk is still streaming in (`isReady` returns false) we
+   * return a plain terrain-column height instead of whatever could be read from
+   * neighbouring loaded chunks — in 3D rendering an unloaded column above is
+   * often water, so "heightAt + 1" would drop the player to the void during chunk
+   * loading (P13-fixes). In 2D mode returns the same as before (heightAt + 1).
+   */
+  heightAt(wx: number, wz: number, opts?: { ready?: (x: number, z: number) => boolean }): number {
+    if (opts?.ready && !opts.ready(wx, wz)) {
+      return this.heightFor(wx, wz, this.mountainAt(wx, wz)); // wait for real terrain
+    }
+    return this.heightAtLoaded(wx, wz);
+  }
+
+  /** Same as {@link heightAt} without the readiness gate (for callers that already have chunks). */
+  heightAtLoaded(wx: number, wz: number): number {
     return this.heightFor(wx, wz, this.mountainAt(wx, wz));
   }
 

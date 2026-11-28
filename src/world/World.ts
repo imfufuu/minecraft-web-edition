@@ -32,6 +32,9 @@ export class World {
     return this.chunks.has(Chunk.keyOf(cx, cz));
   }
 
+  /** P13-fixes: always-true guard for callers that already have the chunk — see TerrainGenerator.heightAt. */
+  readonly readyAlways: (x: number, z: number) => boolean = () => true;
+
   /** Returns the existing chunk or generates a fresh one from the seed. */
   getOrCreateChunk(cx: number, cz: number): Chunk {
     const key = Chunk.keyOf(cx, cz);

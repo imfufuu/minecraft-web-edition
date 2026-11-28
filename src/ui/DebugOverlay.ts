@@ -17,7 +17,8 @@ export interface DebugStats {
  */
 export class DebugOverlay {
   private readonly el: HTMLDivElement;
-  private visible = true;
+  /** P13-fixes: start hidden — F3 is the only way to bring it back (soft default). */
+  private visible = false;
 
   private frames = 0;
   private fps = 0;

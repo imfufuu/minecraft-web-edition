@@ -19,6 +19,8 @@ export class TouchControls {
   private stickCY = 0;
   private readonly radius = 48;
   private visible = false;
+  /** The always-on top-right row (F3, ☰) — exposed so later stages (e.g. C2 water visibility) can pair it with extra buttons. */
+  readonly sysBtns: HTMLDivElement;
 
   constructor(input: InputManager, onToggleDebug: () => void, parent: HTMLElement = document.body) {
     this.input = input;
@@ -28,7 +30,12 @@ export class TouchControls {
     sys.className = 'sys-buttons';
     const dbg = this.makeButton('F3', 'sys-btn', () => onToggleDebug());
     const menu = this.makeButton('☰', 'sys-btn', () => input.openMenu());
-    sys.append(dbg, menu);
+    // Spacer with dynamic padding so pairable buttons (see setSysBtnCount) land clear of the sys row.
+    const pad = document.createElement('span');
+    pad.className = 'sys-btn-pad';
+    pad.style.display = 'none';
+    sys.append(dbg, menu, pad);
+    this.sysBtns = sys;
     parent.appendChild(sys);
 
     // --- Touch controls (joystick + action buttons) ---
@@ -73,6 +80,19 @@ export class TouchControls {
 
   get isVisible(): boolean {
     return this.visible;
+  }
+
+  /** P13-fixes: get the always-on top-right sys row so later stages can pair it with extra buttons. */
+  get systemButtonsRow(): HTMLDivElement {
+    return this.sysBtns;
+  }
+
+  /** P13-fixes: push extra buttons (0–4) into the sys row so later stages can reach them without layout overlap. */
+  setSysBtnCount(n: number): void {
+    const pad = this.sysBtns.querySelector<HTMLElement>('.sys-btn-pad');
+    if (!pad) return;
+    pad.style.display = n > 0 ? '' : 'none';
+    pad.style.paddingRight = `calc(${n} * 92px)`;
   }
 
   private makeButton(label: string, cls: string, onTap: () => void): HTMLButtonElement {
